@@ -53,6 +53,19 @@ int main(int ac, char **av) {
 		std::vector<ServerConfig> configs = loader.loadServers(ast_root);
 
 		delete ast_root;
+		// this is added just to check if the data loaded correctly
+
+		std::cout << "Loaded" << configs.size() << " server(s) " << std::endl;
+		for (size_t i = 0; i < configs.size(); i++) {
+			std::cout << "Server " << i << "has" 
+				<< configs[i].locations.size() << "location(s)" << std::endl;
+			for (size_t j = 0; j < configs[i].locations.size(); j++) {
+				std::cout << "location: " << configs[i].locations[j].path
+					<< " root: " << configs[i].locations[j].root << std::endl;
+			}
+		}
+		/////////////////////////////////////////////////////////////////////
+
 	} catch (const std::exception& e) {
 		std::cerr << "\n Fatal error during setup: " <<  e.what() << std::endl;
 		return 1;
