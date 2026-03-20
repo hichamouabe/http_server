@@ -1,4 +1,5 @@
 #include "Utils.hpp"
+#include <algorithm> // 3la wdit transform
 
 bool	isNumeric(const std::string &s) {
 	if (s.empty()) return false;
@@ -63,7 +64,7 @@ std::pair<std::string, int> parseListen(const std::string& val) {
 	std::string	port_str;
 	size_t	pos = val.find(':');
 
-	if (pos == std::string:npos) {
+	if (pos == std::string::npos) {
 		if (isNumeric(val)) { ip = "0.0.0.0"; port_str = val; }
 		else { ip = val; port_str = "80"; }
 	}

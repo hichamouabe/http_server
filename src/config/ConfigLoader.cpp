@@ -10,7 +10,7 @@ std::string	joinPaths(const std::string& parent, const std::string& child) {
 	if (parent.empty() || parent == "/") return child;
 	if (child.empty()) return parent;
 
-	if(parent[parent.size() - 1] = '/' && child[0] == '/') {
+	if(parent[parent.size() - 1] == '/' && child[0] == '/') {
 		return parent + child.substr(1);
 	}
 	if (parent[parent.size() - 1] != '/' && child[0] != '/') {
@@ -33,7 +33,7 @@ std::vector<ServerConfig>	ConfigLoader::loadServers(ConfigNode* root) {
 	return servers;
 }
 
-void	ConfigLoader::loadserver(ConfigNode* node, ServerConfig& conf) {
+void	ConfigLoader::loadServer(ConfigNode* node, ServerConfig& conf) {
 	std::string	serverRoot;
 	std::string	serverIndex;
 
@@ -41,7 +41,7 @@ void	ConfigLoader::loadserver(ConfigNode* node, ServerConfig& conf) {
 		ConfigNode* child = node->children[i];
 
 		if (child->name == "listen") {
-			conf.server_sockets.push_back(parseListen(child->args[0]));
+			conf.listen_sockets.push_back(parseListen(child->args[0]));
 		}
 		else if (child->name == "server_name") {
 			conf.server_names = child->args;
@@ -78,7 +78,7 @@ void	ConfigLoader::loadserver(ConfigNode* node, ServerConfig& conf) {
 
 void	ConfigLoader::loadLocation(ConfigNode* node, LocationConfig parent, std::vector<LocationConfig>& list) {
 	LocationConfig	loc = parent;
-	loc.path = joinPaths(parent.path, node->args[0];
+	loc.path = joinPaths(parent.path, node->args[0]);
 
 	for (size_t i = 0; i < node->children.size(); i++) {
 	ConfigNode* child = node->children[i];
@@ -87,7 +87,7 @@ void	ConfigLoader::loadLocation(ConfigNode* node, LocationConfig parent, std::ve
 	else if (child->name == "index") loc.index = child->args[0];
 	else if (child->name == "autoindex") loc.autoindex = (child->args[0] == "on");
 	else if (child->name == "client_max_body_size") loc.client_max_body_size = parseSize(child->args[0]);
-	else if (child->name == "return") loc.return_url = std::make_pair(std::atoi(child->args[0].c_str)), child->args[1]);
+	else if (child->name == "return") loc.return_url = std::make_pair(std::atoi(child->args[0].c_str()), child->args[1]);
 	else if (child->name == "cgi_pass") loc.cgi_pass = child->args[0];
 	else if (child->name == "upload_store") loc.upload_store = child->args[0];
 	else if (child->name == "limit_except") { loc.allowed_methods = child->args; }

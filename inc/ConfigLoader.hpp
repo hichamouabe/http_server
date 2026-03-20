@@ -36,8 +36,8 @@ struct	ServerConfig {
 
 class	ConfigLoader {
 	private:
-		void	loadserver(ConfigNode* node, ServerConfig& conf);
-		void	loadlocation(ConfigNode* node, LocationConfig parent, std::vector<LocationConfig>& list);
+		void	loadServer(ConfigNode* node, ServerConfig& conf);
+		void	loadLocation(ConfigNode* node, LocationConfig parent, std::vector<LocationConfig>& list);
 	public:
 		ConfigLoader();
 		~ConfigLoader();

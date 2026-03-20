@@ -92,7 +92,7 @@ void	ConfigValidator::validateNode(ConfigNode* node, int current_context) {
 				parse_http_code(node->args[i]);
 	}
 	if (node->name == "client_max_body_size")
-		parseCmbz(node->args[0]);
+		parseCbmz(node->args[0]);
 	if (node->name == "autoindex") {
 		if (node->args[0] != "on" && node->args[0] != "off")
 			throw std::runtime_error("Validation Error: Invalid value for autoindex (expected 'on' or 'off')");

@@ -1,7 +1,7 @@
 #include "Lexer.hpp"
 #include <sstream>
 
-Lexer::Lexer(const std::string& src) : _src(src), _pos(0), _line(l) {}
+Lexer::Lexer(const std::string& src) : _src(src), _pos(0), _line(1) {}
 Lexer::~Lexer() {}
 
 bool	Lexer::isSpace(char c) const {
@@ -41,7 +41,7 @@ Token	Lexer::readQuotedString(char quote) {
 		_pos++;
 	}
 	std::string value = _src.substr(start, _pos - start);
-	if (_pos < _src.length()) { _pos++}
+	if (_pos < _src.length()) { _pos++;}
 	else {
 		std::stringstream ss;
 		ss << "Lexer Error: Unclosed quote at line " << _line;
@@ -73,7 +73,7 @@ std::vector<Token> Lexer::tokenize() {
 			_pos++;
 		}
 		else if (c == '}') {
-			token.push_back(Token(T_RBRACE, "}", _line));
+			tokens.push_back(Token(T_RBRACE, "}", _line));
 			_pos++;
 		}
 		else if (c == ';') {

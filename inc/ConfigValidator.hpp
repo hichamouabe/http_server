@@ -30,6 +30,6 @@ class	ConfigValidator {
 		~ConfigValidator();
 
 		void	validate(ConfigNode* root);
-}
+};
 
-#define
+#endif
