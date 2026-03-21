@@ -59,4 +59,45 @@ bool	Client::requestComplete() const {
 	return (recv_buf.find("\r\n\r\n") != std::string::npos);
 }
 
+// request setters
 
+void	Client::setMethod(std::string m)		{method = m;}
+void	Client::setPath(std::string p)			{path = p;}
+void	Client::setVersion(std::string v)		{version = v;}
+void	Client::setHeader(std::string key, std::string value)	{header[key] = value; }
+void	Client::setBody(const std::string& b)		{body = b;}
+void	Client::setContentLength(size_t cl)		{content_length = cl;}
+void	Client::setErrorCode(int code)			{error_code = code;}
+void	Client::setKeepAlive(bool ka)			{keep_alive = ka;}
+
+
+// request getters
+
+std::string                         Client::getMethod()        const { return method; }
+std::string                         Client::getPath()          const { return path; }
+std::string                         Client::getVersion()       const { return version; }
+std::map<std::string, std::string>  Client::getHeader()        const { return header; }
+std::string                         Client::getBody()          const { return body; }
+size_t                              Client::getContentLength() const { return content_length; }
+int                                 Client::getErrorCode()     const { return error_code; }
+bool                                Client::isKeepAlive()      const { return keep_alive; }
+
+
+// response file streaming
+
+void	Client::openFile(const std::string& path) {
+	file_stream.open(path.c_str(), std::ios::binary);
+}
+
+std::streamsize	Client::readFile(char* buf, std::size_t size) {
+	if (!file_stream.is_open()) return -1;
+	file_stream.read(buf, size);
+	return file_stream.gcount();
+}
+
+void    Client::setFileSize(size_t fs)  { file_size = fs; }
+void    Client::setHeaderSent(bool hs) { header_sent = hs; }
+bool    Client::headerSent()           { return header_sent; }
+void    Client::setBytesSent(size_t n) { bytes_sent += n; }
+size_t  Client::getBytesSent()   const { return bytes_sent; }
+size_t  Client::getFileSize()    const { return file_size; }
