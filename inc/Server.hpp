@@ -109,16 +109,43 @@ class	Client {
 };
 
 
+Class Server {
+	private:
+		int				epfd;
+		std::vector<int>		listenfd;
+		std::map<int, Client*>		clients;
+		std::vector<ServerConfig>	_configs;
+		std::map<int, int>		_fd_to_config;
 
+		// Socket.cpp methods
+		void	setNonBlocking(int fd);
+		int	createListenSocket(const std::string& host, int port);
 
+		// Epoll.cpp
+		void	addToEpoll(int fd);
+		void	modifyEpoll(int fd, uint32_t events);
+		bool	isListenFd(int fd);
 
+		// Server.cpp
+		void	acceptClients(int listen_fd);
+		void	disconnect(int fd);
 
+		// Request.cpp
+		void	handleRequest(int fd);
 
+		// Response.cpp
+		void	buildResponse(Client& c);
+		void	handleResponse(int fd);
 
+		// ErrorPages.cpp
+		std::string defaultErrorPage(int code, const std::string& msg);
+		std::string buildErrorResponse(int code, const std::string& msg, ServerConfig& srv);
 
+	public:
+		Server();
+		~Server();
+		void	setup(const std::vector<ServerConfig>& configs);
+		void	eventLoop();
+};
 
-
-
-
-
-
+#endif
