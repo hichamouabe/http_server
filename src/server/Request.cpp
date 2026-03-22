@@ -110,7 +110,7 @@ void	Server::handleRequest(int fd) {
 
 	while (true) {
 		if (c.getState() == READ_REQUEST_LINE) {
-			if (c.ercvBuf().find("\r\n") == std::string::npos) break;
+			if (c.recvBuf().find("\r\n") == std::string::npos) break;
 
 			size_t consumed = parseRequestLine(c);
 			if (consumed == std::string::npos) {
@@ -150,7 +150,7 @@ void	Server::handleRequest(int fd) {
 					if (c.getPath().find(lp) == 0 && lp.size() > longest) {
 						size_t end_idx = lp.size();
 						if (end_idx == c.getPath().size() || 
-								c.getPath[end_idx] == '/' || 
+								c.getPath()[end_idx] == '/' || 
 								lp[lp.size()-1] == '/') {
 							longest = lp.size();
 							loc = &srv.locations[i];

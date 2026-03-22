@@ -53,7 +53,7 @@ void	Server::eventLoop() {
 				if (c.getState() == WRITE_RESPONSE)
 					handleResponse(fd);
 				if (c.getState() == CLOSED)
-					diconnect(fd);
+					disconnect(fd);
 			}
 		}
 	}

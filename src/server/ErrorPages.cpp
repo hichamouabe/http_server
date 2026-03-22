@@ -16,7 +16,7 @@ std::string Server::buildErrorResponse(int code, const std::string& msg, ServerC
 
 	if (srv.error_pages.count(code)) {
 		std::string page_path = srv.error_pages[code];
-		std::string full_page;
+		std::string full_path;
 		if (!srv.locations.empty())
 			full_path = srv.locations[0].root + page_path;
 		else

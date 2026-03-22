@@ -60,6 +60,7 @@ class	Client {
 		std::ifstream	file_stream;
 		
 		Client();
+		explicit Client(int fd);
 		~Client();
 
 		// for re-use the same connection (keep-alive)
@@ -109,7 +110,7 @@ class	Client {
 };
 
 
-Class Server {
+class Server {
 	private:
 		int				epfd;
 		std::vector<int>		listenfd;

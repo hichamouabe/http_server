@@ -50,7 +50,7 @@ static	std::string resolvePath(const std::string& uri, LocationConfig* loc) {
 	if (!root.empty() && root[root.size()-1] == '/')
 		root.erase(root.size()-1);
 	std::string remain = uri.substr(loc->path.size());
-	if (remain.empty() || remail[0] != '/')
+	if (remain.empty() || remain[0] != '/')
 		remain = "/" + remain;
 	return root + remain;
 }
@@ -64,7 +64,7 @@ static	std::string buildAutoindex(const std::string& uri, const std::string& dir
 	if (dir) {
 		struct dirent* entry;
 		while ((entry = readdir(dir)) != NULL) {
-			std::string name == entry->d_name;
+			std::string name = entry->d_name;
 			if (name == ".") continue;
 			bool is_dir = (entry->d_type == DT_DIR);
 			html << "<a href=\"" << name << (is_dir ? "/" : "") << "\">"

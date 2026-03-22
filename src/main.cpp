@@ -2,6 +2,7 @@
 #include "Parser.hpp"
 #include "ConfigValidator.hpp"
 #include "ConfigLoader.hpp"
+#include "Server.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -65,7 +66,14 @@ int main(int ac, char **av) {
 			}
 		}
 		/////////////////////////////////////////////////////////////////////
+	if (configs.empty())
+    		throw std::runtime_error("No valid server blocks found in config file.");
 
+	std::cout << "--- 5. Starting Server ---" << std::endl;
+	Server my_server;
+	my_server.setup(configs);
+	std::cout << "Server is running! Waiting for connections..." << std::endl;
+	my_server.eventLoop();
 	} catch (const std::exception& e) {
 		std::cerr << "\n Fatal error during setup: " <<  e.what() << std::endl;
 		return 1;
