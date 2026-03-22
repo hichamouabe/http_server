@@ -44,3 +44,36 @@ static LocationConfig* matchLocation(ServerConfig& srv, const std::string& uri) 
 }
 
 
+// from the uri you type to the filesystem one the path that the server will use localy
+static	std::string resolvePath(const std::string& uri, LocationConfig* loc) {
+	std::string root = loc->root;
+	if (!root.empty() && root[root.size()-1] == '/')
+		root.erase(root.size()-1);
+	std::string remain = uri.substr(loc->path.size());
+	if (remain.empty() || remail[0] != '/')
+		remain = "/" + remain;
+	return root + remain;
+}
+
+static	std::string buildAutoindex(const std::string& uri, const std::string& dir_path) {
+	std::ostringstream html;
+	html << "<!DOCKTYPE html>\n<html><head><title>Index of " << uri << "</title></head>\n"
+		<< "<body><h1>Index of " << uri << "</h1><hr><pre>\n";
+
+	DIR* dir = opendir(dir_path.c_str());
+	if (dir) {
+		struct dirent* entry;
+		while ((entry = readdir(dir)) != NULL) {
+			std::string name == entry->d_name;
+			if (name == ".") continue;
+			bool is_dir = (entry->d_type == DT_DIR);
+			html << "<a href=\"" << name << (is_dir ? "/" : "") << "\">"
+				<< name << (is_dir ? "/" : "") << "</a>\n";
+		}
+		closedir(dir);
+	}
+	html << "</pre><hr></body></html>\n";
+	return html.str();
+}
+
+
