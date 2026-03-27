@@ -5,7 +5,7 @@ std::string Server::defaultErrorPage(int code, const std::string& msg) {
 	oss << "<!DOCTYPE html>\r\n"
 		<< "<html><head><title>" << code << " " << msg << "</title></head>\r\n"
 		<< "<body>\r\n"
-		<< "<h1> << code" << " " << msg << "</h1>\r\n"
+		<< "<h1>" << code << " " << msg << "</h1>\r\n"
 		<< "<hr><p>Webserv/1.0</p>\r\n"
 		<< "</body></html>\r\n";
 	return oss.str();
