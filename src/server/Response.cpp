@@ -1,7 +1,7 @@
 #include "Server.hpp"
 #include <sstream>
 #include <dirent.h>
-
+#include "CGI.hpp"
 
 // mime types
 static std::string getMimeType(const std::string& path) {
@@ -121,6 +121,19 @@ static ServerConfig& selectServer(std::vector<ServerConfig>& configs,
     return configs[0];
 }
 
+static const char* getStatusMsg(int code) {
+	if (code == 200) return "OK";
+	if (code == 201) return "Created";
+	if (code == 204) return "No Content";
+	if (code == 301) return "Moved Permanently";
+	if (code == 403) return "Forbidden";
+	if (code == 404) return "Not Found";
+	if (code == 405) return "Method Not Allowed";
+	if (code == 500) return "Internal Server Error";
+	if (code == 504) return "Gateway Timeout";
+	return "Unknown";
+}
+
 // --- BUILD RESPONSE ---
 void Server::buildResponse(Client& c) {
     ServerConfig& srv = selectServer(_configs, _fd_to_config, c.getListenFd());
@@ -172,6 +185,65 @@ void Server::buildResponse(Client& c) {
     std::string physical = resolvePath(c.getPath(), loc);
     std::cout << "[ROUTE] " << c.getMethod() << " " << c.getPath()
               << " -> " << physical << std::endl;
+
+    // === CGI HANDLING ===
+    if (!loc->cgi_pass.empty()) {
+        size_t dot = physical.rfind('.');
+        if (dot != std::string::npos) {
+            std::string ext = physical.substr(dot);
+
+            if (loc->cgi_pass.find(ext) != loc->cgi_pass.end()) {
+                std::string interpreter = loc->cgi_pass[ext];
+
+                if (access(physical.c_str(), F_OK) != 0) {
+                    c.sendBuf() = buildErrorResponse(404, "Script Not Found", srv);
+                    c.setFileSize(c.sendBuf().size());
+                    return;
+                }
+                if (access(physical.c_str(), X_OK) != 0) {
+                    c.sendBuf() = buildErrorResponse(403, "Script Not Executable", srv);
+                    c.setFileSize(c.sendBuf().size());
+                    return;
+                }
+
+                size_t qmark = c.getPath().find('?');
+                std::string query = (qmark != std::string::npos) ? c.getPath().substr(qmark + 1) : "";
+
+                CGI cgi;
+                cgi.setMethod(c.getMethod());
+                cgi.setPath(physical);
+                cgi.setQuery(query);
+                cgi.setBody(c.getBody());
+                cgi.setContentType(c.getHeader().count("Content-Type") ? c.getHeader()["Content-Type"] : "");
+                cgi.setHost(c.getHeader().count("Host") ? c.getHeader()["Host"] : "localhost");
+
+                int result = cgi.execute(interpreter, 30);
+
+                if (cgi.hasError()) {
+                    c.sendBuf() = buildErrorResponse(result, getStatusMsg(result), srv);
+                    c.setFileSize(c.sendBuf().size());
+                    return;
+                }
+
+                int status = cgi.getStatus();
+                std::string body = cgi.getBody();
+
+                std::ostringstream oss;
+                oss << "HTTP/1.1 " << status << " " << getStatusMsg(status) << "\r\n"
+                    << "Server: Webserv/1.0\r\n"
+                    << "Content-Length: " << body.size() << "\r\n"
+                    << "Content-Type: text/html\r\n"
+                    << "Connection: close\r\n\r\n";
+
+                if (!body.empty())
+                    oss << body;
+
+                c.sendBuf() = oss.str();
+                c.setFileSize(c.sendBuf().size());
+                return;
+            }
+        }
+    }
 
     // --- 3. DELETE ---
     if (c.getMethod() == "DELETE") {

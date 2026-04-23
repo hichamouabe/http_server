@@ -16,7 +16,8 @@ SRCS    = src/main.cpp \
           src/server/Server.cpp \
           src/server/Request.cpp \
           src/server/ErrorPages.cpp \
-          src/server/Response.cpp
+          src/server/Response.cpp \
+          src/server/CGI.cpp
 
 OBJS    = $(SRCS:.cpp=.o)
 
