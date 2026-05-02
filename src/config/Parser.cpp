@@ -16,7 +16,7 @@ ConfigNode*	Parser::parse() {
 }
 
 ConfigNode*	Parser::parseStatement() {
-	if (_pos >= _tokens.size()) return NULL;
+	if (_pos >= _tokens.size()) throw std::runtime_error("Unexpected End of file");
 	if (_tokens[_pos].type != T_WORD) {
 		throw std::runtime_error("Syntax Error: Expected directive name");
 	}

@@ -50,8 +50,21 @@ void	ConfigLoader::loadServer(ConfigNode* node, ServerConfig& conf) {
 			conf.client_max_body_size = parseSize(child->args[0]);
 		}
 		else if (child->name == "error_page") {
-			int code = std::atoi(child->args[0].c_str());
-			conf.error_pages[code] = child->args[1];
+    			// RULE: Last argument is ALWAYS the file path
+   	 		//       All arguments BEFORE it are error codes
+    
+    			if (child->args.size() < 2) {
+        			throw std::runtime_error("error_page directive requires at least 1 code and 1 file");
+    			}
+    
+    			// Extract the file path (last argument)
+    			std::string file_path = child->args[child->args.size() - 1];
+    
+    			// Map ALL error codes (everything except last arg) to this file
+    			for (size_t j = 0; j < child->args.size() - 1; j++) {
+        		int code = std::atoi(child->args[j].c_str());
+        		conf.error_pages[code] = file_path;
+    			}
 		}
 		else if (child->name == "root") serverRoot = child->args[0];
 		else if (child->name == "index") serverIndex = child->args[0];

@@ -99,4 +99,13 @@ void	ConfigValidator::validateNode(ConfigNode* node, int current_context) {
 	}
 	if (node->name == "return")
 		parse_http_code(node->args[0]);
+	if (node->name == "limit_except") {
+		for (size_t i = 0; i < node->args.size(); i++) {
+			std::string method = node->args[i];
+			if (method != "GET" && method != "POST" && method != "DELETE" &&
+					method != "PUT" && method != "HEAD" && method != "PATCH" && method != "OPTIONS") {
+				throw std::runtime_error("Validation Error: Invalid HTTP method '" + method + "'");
+			}
+		}
+	}
 }

@@ -47,7 +47,7 @@ void	parse_http_code(const std::string& nb) {
 		if (code < 100 || code > 599 || nb.size() > 3) throw std::runtime_error("Error_page code (out of range 100-599): '" + nb + "'");
 	} else throw std::runtime_error("Error_page code must be numeric'" + nb + "'");
 }
-
+// parse Client Max Body siZe 
 void	parseCbmz(const std::string& vl) {
 	std::string nb;
 	char last = vl[vl.size() - 1];
@@ -86,5 +86,6 @@ size_t	parseSize(const std::string& val) {
 	else if (last == 'm' || last == 'M' ) { multiplier = 1024 * 1024; num_str = val.substr(0, val.size() - 1);}
 	else if (last == 'g' || last == 'G' ) {multiplier = 1024 * 1024 * 1024; num_str = val.substr(0, val.size() -1);}
 
+	if (num_str.size() > 10) throw std::runtime_error("Number too large");
 	return static_cast<size_t>(std::atoi(num_str.c_str())) * multiplier;
 }
