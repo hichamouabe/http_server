@@ -112,14 +112,14 @@ static bool saveUpload(Client& c, LocationConfig* loc) {
 // --- SERVER SELECTION ---
 // Picks the right ServerConfig based on which listen fd accepted the connection.
 // Falls back to the first config if no match found.
-static ServerConfig& selectServer(std::vector<ServerConfig>& configs,
+/*static ServerConfig& selectServer(std::vector<ServerConfig>& configs,
                                    const std::map<int, int>& fd_to_config,
                                    int listen_fd) {
     std::map<int, int>::const_iterator it = fd_to_config.find(listen_fd);
     if (it != fd_to_config.end())
         return configs[it->second];
     return configs[0];
-}
+}*/
 
 static const char* getStatusMsg(int code) {
 	if (code == 200) return "OK";
@@ -133,11 +133,112 @@ static const char* getStatusMsg(int code) {
 	if (code == 504) return "Gateway Timeout";
 	return "Unknown";
 }
+//////////////////////////////////////////////////////////////////////////////////// here am gonna add the edit for implementing the virtual hosting//////
+// ═══════════════════════════════════════════════════════════════════
+// Helper: Check if hostname matches any server_name on this socket
+// ═══════════════════════════════════════════════════════════════════
+bool Server::isHostnameMatched(
+    int listen_fd,
+    const std::string& host_header
+) {
+	std::map<int, std::vector<int> >::const_iterator it = _fd_to_configs.find(listen_fd);
+	if (it == _fd_to_configs.end())
+		return false;
 
+	const std::vector<int>& config_indices = it->second;
+
+	// Extract hostname from "Host: example.com:8080"
+	std::string requested_hostname = host_header;
+	size_t colon = requested_hostname.find(':');
+	if (colon != std::string::npos)
+		requested_hostname = requested_hostname.substr(0, colon);
+
+	// Check all configs on this socket
+	for (size_t i = 0; i < config_indices.size(); i++) {
+		ServerConfig& srv = _configs[config_indices[i]];
+
+		// Check each server_name in this config
+		for (size_t j = 0; j < srv.server_names.size(); j++) {
+			if (srv.server_names[j] == requested_hostname ||
+				srv.server_names[j] == "*") {
+				return true;  // ✓ Match found
+			}
+		}
+	}
+
+	return false;  // ✗ No match found
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Helper: Select correct config based on listening fd + Host header
+// ═══════════════════════════════════════════════════════════════════
+bool Server::selectServerByHostname(
+    int listen_fd,
+    const std::string& host_header,
+    ServerConfig*& selected_config
+) {
+	std::map<int, std::vector<int> >::const_iterator it = _fd_to_configs.find(listen_fd);
+	if (it == _fd_to_configs.end()) {
+		selected_config = &_configs[0];  // Fallback to first config
+		return false;
+	}
+
+	const std::vector<int>& config_indices = it->second;
+
+	// Extract hostname
+	std::string requested_hostname = host_header;
+	size_t colon = requested_hostname.find(':');
+	if (colon != std::string::npos)
+		requested_hostname = requested_hostname.substr(0, colon);
+
+	// Try to find matching server_name
+	for (size_t i = 0; i < config_indices.size(); i++) {
+		ServerConfig& srv = _configs[config_indices[i]];
+
+		for (size_t j = 0; j < srv.server_names.size(); j++) {
+			if (srv.server_names[j] == requested_hostname ||
+				srv.server_names[j] == "*") {
+				selected_config = &srv;
+				return true;  // ✓ Match found!
+			}
+		}
+	}
+
+	// No match - return first config for this socket
+	selected_config = &_configs[config_indices[0]];
+	return false;  // ✗ No match
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////end
 // --- BUILD RESPONSE ---
 void Server::buildResponse(Client& c) {
-    ServerConfig& srv = selectServer(_configs, _fd_to_config, c.getListenFd());
+    //ServerConfig& srv = selectServer(_configs, _fd_to_config, c.getListenFd());
+	/////////////////////////////////////////////////////////////////////////////////////////// that edit for virtual hosting //////////////
+	ServerConfig* srv_ptr = NULL;
+	bool hostname_matched = selectServerByHostname(
+		c.getListenFd(),
+		c.getHeader()["Host"],
+		srv_ptr
+	);
+	ServerConfig& srv = *srv_ptr;
 
+	// ⭐ Send 421 if hostname doesn't match any server_name
+	if (!hostname_matched) {
+		std::string body = "<html><body><h1>421 Misdirected Request</h1>"
+		                   "<p>Hostname not configured on this server</p></body></html>";
+		std::ostringstream oss;
+		oss << "HTTP/1.1 421 Misdirected Request\r\n"
+		    << "Server: Webserv/1.0\r\n"
+		    << "Content-Type: text/html\r\n"
+		    << "Content-Length: " << body.size() << "\r\n"
+		    << "Connection: close\r\n\r\n"
+		    << body;
+		c.sendBuf() = oss.str();
+		c.setFileSize(c.sendBuf().size());
+		std::cout << "[RESPONSE] 421: Hostname '" << c.getHeader()["Host"] 
+		          << "' not configured" << std::endl;
+		return;
+	}
     // Early exit for errors set during request parsing (400, 413)
     if (c.getErrorCode() != 0) {
         std::string msg = (c.getErrorCode() == 413) ? "Content Too Large" : "Bad Request";

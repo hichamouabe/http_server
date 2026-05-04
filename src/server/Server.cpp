@@ -21,7 +21,7 @@ Server::~Server() {
 // also build our tracker _fd_to_config bach n3rfo which ServerConfig mlinki m3a listen fd 
 // so db kola connection ghadi nkhtaro liha server block dyalha (flowel knt mhard codi ga3 connections ikhdmo blconfig lowla )
 
-void	Server::setup(const std::vector<ServerConfig>& configs) {
+/*void	Server::setup(const std::vector<ServerConfig>& configs) {
 	_configs = configs;
 	std::map<std::string, int> bound;
 
@@ -44,6 +44,34 @@ void	Server::setup(const std::vector<ServerConfig>& configs) {
 			int lfd = bound[key];
 			if (_fd_to_config.find(lfd) == _fd_to_config.end())
 				_fd_to_config[lfd] = static_cast<int>(i);
+		}
+	}
+}*/
+
+void	Server::setup(const std::vector<ServerConfig>& configs) {
+	_configs = configs;
+	std::map<std::string, int> bound;
+
+	for (size_t i = 0; i < _configs.size(); i++) {
+		for (size_t j = 0; j < _configs[i].listen_sockets.size(); j++) {
+			std::string host = _configs[i].listen_sockets[j].first;
+			int	port = _configs[i].listen_sockets[j].second;
+
+			std::ostringstream oss;
+			oss << host << ":" << port;
+			std::string key = oss.str();
+
+			if (bound.find(key) == bound.end()) {
+				int fd = createListenSocket(host, port);
+				listenfd.push_back(fd);
+				bound[key] = fd;
+				addToEpoll(fd);
+				std::cout << "[LISTEN]" << key << " fd=" << fd << std::endl;
+			}
+			int lfd = bound[key];
+
+			// ✅ CHANGED: Store ALL configs for this listening fd
+			_fd_to_configs[lfd].push_back(i);
 		}
 	}
 }

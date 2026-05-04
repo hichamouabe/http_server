@@ -116,8 +116,9 @@ class Server {
 		std::vector<int>		listenfd;
 		std::map<int, Client*>		clients;
 		std::vector<ServerConfig>	_configs;
-		std::map<int, int>		_fd_to_config;
+	//	std::map<int, int>		_fd_to_config;
 
+		std::map<int, std::vector<int> > _fd_to_configs;
 		// Socket.cpp methods
 		void	setNonBlocking(int fd);
 		int	createListenSocket(const std::string& host, int port);
@@ -141,6 +142,13 @@ class Server {
 		// ErrorPages.cpp
 		std::string defaultErrorPage(int code, const std::string& msg);
 		std::string buildErrorResponse(int code, const std::string& msg, ServerConfig& srv);
+
+		// NEW METHODS:
+		bool	selectServerByHostname(
+				int listen_fd,
+				const std::string& host_header,
+				ServerConfig*& selected_config);
+		bool	isHostnameMatched(int listen_fd, const std::string& host_header);
 
 	public:
 		Server();
