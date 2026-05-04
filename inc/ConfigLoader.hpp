@@ -23,15 +23,16 @@ struct	LocationConfig {
 };
 
 struct	ServerConfig {
-	std::string					host;
-	int						port;
+	//std::string					host;
+	//int						port;
 	std::vector<std::pair<std::string, int> >	listen_sockets;
 	std::vector<std::string>			server_names;
 	size_t						client_max_body_size;
 	std::map<int, std::string>			error_pages;
 	std::vector<LocationConfig>			locations;
 
-	ServerConfig() : host("0.0.0.0"), port(80), client_max_body_size(0) {}
+	ServerConfig() : client_max_body_size(0) {}
+	//ServerConfig() : host("0.0.0.0"), port(80), client_max_body_size(0) {}
 };
 
 class	ConfigLoader {

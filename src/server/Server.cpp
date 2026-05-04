@@ -50,6 +50,30 @@ Server::~Server() {
 
 void	Server::setup(const std::vector<ServerConfig>& configs) {
 	_configs = configs;
+	std::map<std::string, int> default_servers;  // ← ADD THIS
+    
+    // ← ADD THIS VALIDATION BLOCK
+for (size_t i = 0; i < _configs.size(); i++) {
+    if (_configs[i].server_names.empty()) {
+        // Loop through each listen socket for this config
+        for (size_t j = 0; j < _configs[i].listen_sockets.size(); j++) {
+            int port = _configs[i].listen_sockets[j].second;
+            
+            // Convert port to string without to_string
+            std::ostringstream oss;
+            oss << port;
+            std::string port_key = oss.str();
+            
+            default_servers[port_key]++;
+            
+            if (default_servers[port_key] > 1) {
+                throw std::runtime_error(
+                    "Error: Multiple server blocks without server_name on port " + port_key
+                );
+            }
+        }
+    }
+}
 	std::map<std::string, int> bound;
 
 	for (size_t i = 0; i < _configs.size(); i++) {
