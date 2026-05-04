@@ -20,6 +20,7 @@
 #include <sys/epoll.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/time.h>
 
 
 // state machine (all the states that we gonna go through in each connection)
@@ -116,6 +117,7 @@ class Server {
 		std::vector<int>		listenfd;
 		std::map<int, Client*>		clients;
 		std::vector<ServerConfig>	_configs;
+		static const int		SOCKET_TIMEOUT = 30;
 	//	std::map<int, int>		_fd_to_config;
 
 		std::map<int, std::vector<int> > _fd_to_configs;
@@ -149,6 +151,8 @@ class Server {
 				const std::string& host_header,
 				ServerConfig*& selected_config);
 		bool	isHostnameMatched(int listen_fd, const std::string& host_header);
+		// for timeout
+		void setSocketTimeout(int fd);
 
 	public:
 		Server();

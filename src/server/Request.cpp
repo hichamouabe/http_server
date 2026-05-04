@@ -1,6 +1,10 @@
 #include "Server.hpp"
 #include <sstream>
 
+
+const size_t MAX_REQUEST_LINE = 8192;      // 8KB
+const size_t MAX_HEADER_LINE = 8192;       // 8KB per header
+const size_t MAX_HEADERS_SIZE = 65536;     // 64KB total
 // normalize the path (hna y9dr ikon path traversal o tssd9 mkhli server yfot root so each .. ghadi nrj3o lor 7ta nwsslo root o n7bsso)
 
 static	std::string normalizePath(const std::string& path) {
@@ -78,6 +82,13 @@ static void parseHeaders(Client& c) {
 
 	while (std::getline(ss, line)) {
 		if (line == "\r"  || line.empty()) continue;
+		///////////////////////////////////////////check max header size /////////////
+		if (line.size() > MAX_HEADER_LINE) {
+			c.setErrorCode(431);
+			c.setState(PROCESS_REQUEST);
+			return;
+		}
+		//////////////////////////////////////////////////end ////////////////////
 		size_t colon = line.find(':');
 		if (colon == std::string::npos) continue;
 
@@ -110,6 +121,13 @@ void	Server::handleRequest(int fd) {
 
 	while (true) {
 		if (c.getState() == READ_REQUEST_LINE) {
+			/////////////////////////////////////////////////max request check added //////////////////////
+			if (c.recvBuf().size() > MAX_REQUEST_LINE) {
+				c.setErrorCode(431);
+				c.setState(PROCESS_REQUEST);
+				break;
+			}
+			///////////////////////////////////////////////// end of the max check in request line /////////
 			if (c.recvBuf().find("\r\n") == std::string::npos) break;
 
 			size_t consumed = parseRequestLine(c);
@@ -122,6 +140,13 @@ void	Server::handleRequest(int fd) {
 			c.setState(READ_REQUEST_HEADER);
 		}
 		else if (c.getState() == READ_REQUEST_HEADER) {
+			////////////////////////////////////////////max total headers size check ////////////
+			if (c.recvBuf().size() > MAX_HEADERS_SIZE) {
+				c.setErrorCode(431);
+				c.setState(PROCESS_REQUEST);
+				break;
+			}
+			///////////////////////////////////////////////////////////////end/////////////////
 			size_t pos = c.recvBuf().find("\r\n\r\n");
 			if (pos == std::string::npos) break;
 			parseHeaders(c);
@@ -141,8 +166,15 @@ void	Server::handleRequest(int fd) {
 				size_t cl = static_cast<size_t>(std::atoi(hdrs["Content-Length"].c_str()));
 				c.setContentLength(cl);
 
-				ServerConfig& srv = _configs[0];
+				///////////////////////////////////////////////////////here we use the virtual hosting in the request //////////////////////////////////////
+				ServerConfig* srv_ptr = NULL;
+				selectServerByHostname(c.getListenFd(),hdrs.count("Host") ? hdrs["Host"] : "localhost", srv_ptr);
+				ServerConfig& srv = *srv_ptr;
 				size_t max_body = srv.client_max_body_size;
+
+				/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////end/////////////
+				//ServerConfig& srv = _configs[0];
+				//size_t max_body = srv.client_max_body_size;
 				LocationConfig* loc = NULL;
 				size_t longest = 0;
 				for (size_t i = 0; i < srv.locations.size(); i++) {

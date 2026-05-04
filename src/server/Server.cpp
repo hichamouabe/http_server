@@ -48,6 +48,16 @@ Server::~Server() {
 	}
 }*/
 
+void Server::setSocketTimeout(int fd) {
+    struct timeval tv;
+    tv.tv_sec = SOCKET_TIMEOUT;
+    tv.tv_usec = 0;
+
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+}
+
+
 void	Server::setup(const std::vector<ServerConfig>& configs) {
 	_configs = configs;
 	std::map<std::string, int> default_servers;  // ← ADD THIS
@@ -107,6 +117,7 @@ void	Server::acceptClients(int listen_fd) {
 			if (errno == EAGAIN || errno == EWOULDBLOCK) break;
 			return ;
 		}
+		setSocketTimeout(clientfd);
 		setNonBlocking(clientfd);
 		addToEpoll(clientfd);
 		Client* cl = new Client(clientfd);
