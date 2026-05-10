@@ -56,7 +56,8 @@ class	Client {
 		size_t	bytes_sent;
 		bool	header_sent;
 		bool	keep_alive;
-
+		time_t	connection_start_time;
+		time_t	last_activity_time;
 	public:
 		std::ifstream	file_stream;
 		
@@ -108,6 +109,13 @@ class	Client {
 		bool		headerSent();
 		size_t		getBytesSent() const;
 		size_t		getFileSize() const;
+
+		// ===== TIMEOUT METHODS =====
+		void		updateActivityTime();
+		time_t		getLastActivityTime() const;
+		int		getTimeoutForState() const;
+		bool		isInactiveFor(int seconds) const;
+		// ============================
 };
 
 

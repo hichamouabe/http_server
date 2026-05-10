@@ -122,6 +122,7 @@ void	Server::acceptClients(int listen_fd) {
 		addToEpoll(clientfd);
 		Client* cl = new Client(clientfd);
 		cl->setListenFd(listen_fd);
+		cl->updateActivityTime();  // ← ADD THIS LINE
 		clients.insert(std::make_pair(clientfd, cl));
 		std::cout << "[ACCEPT] client fd=" << clientfd << std::endl;
 	}

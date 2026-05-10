@@ -21,7 +21,9 @@ Client::Client(int fd)
 	file_size(0),
 	bytes_sent(0),
 	header_sent(false),
-	keep_alive(false)
+	keep_alive(false),
+	connection_start_time(std::time(NULL)),
+	last_activity_time(std::time(NULL))
 {}
 
 Client::~Client() {}
@@ -101,3 +103,30 @@ bool    Client::headerSent()           { return header_sent; }
 void    Client::setBytesSent(size_t n) { bytes_sent += n; }
 size_t  Client::getBytesSent()   const { return bytes_sent; }
 size_t  Client::getFileSize()    const { return file_size; }
+
+//////////////////////////////////////// time out functions
+void Client::updateActivityTime() {
+	last_activity_time = std::time(NULL);
+}
+
+time_t Client::getLastActivityTime() const {
+	return last_activity_time;
+}
+
+bool Client::isInactiveFor(int seconds) const {
+	return (std::time(NULL) - last_activity_time) > seconds;
+}
+
+int Client::getTimeoutForState() const {
+	switch(state) {
+		case READ_REQUEST_LINE:   return 5;    // 5 sec to send first line
+		case READ_REQUEST_HEADER: return 10;   // 10 sec for headers
+		case READ_BODY:           return 30;   // 30 sec for body upload
+		case PROCESS_REQUEST:     return 60;   // 60 sec to process
+		case WRITE_RESPONSE:      return 30;   // 30 sec to send response
+		case CLOSED:              return 0;
+		default:                  return 30;
+	}
+}
+
+/////////////////////////////////////////////////////////end
