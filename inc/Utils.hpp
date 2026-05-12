@@ -22,4 +22,8 @@ void	parseCbmz(const std::string& vl); /* parse client max body size haha nice n
 std::pair<std::string, int> parseListen(const std::string& val);
 size_t	parseSize(const std::string& val);
 
+
+// URI ENDCODING 
+std::string uriDecodeSinglePass(const std::string& src);
+std::string safeUriDecode(const std::string& src, int max_times = 10);
 #endif

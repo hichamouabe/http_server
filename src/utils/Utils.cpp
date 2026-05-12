@@ -89,3 +89,51 @@ size_t	parseSize(const std::string& val) {
 	if (num_str.size() > 10) throw std::runtime_error("Number too large");
 	return static_cast<size_t>(std::atoi(num_str.c_str())) * multiplier;
 }
+
+
+// URI DECODING FUNCTIONS 
+inline int hexCharToInt(unsigned char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return 0;
+}
+
+// Highly optimized single-pass decode
+std::string uriDecodeSinglePass(const std::string& src) {
+    std::string out;
+    out.reserve(src.length());
+    for (std::size_t i = 0; i < src.length(); ++i) {
+        if (src[i] == '%' && i + 2 < src.length()) {
+            unsigned char hex1 = static_cast<unsigned char>(src[i + 1]);
+            unsigned char hex2 = static_cast<unsigned char>(src[i + 2]);
+            if (std::isxdigit(hex1) && std::isxdigit(hex2)) {
+                int value = (hexCharToInt(hex1) << 4) | hexCharToInt(hex2);
+                out += static_cast<char>(value);
+                i += 2;
+            } else {
+                out += src[i];
+            }
+        }
+        else if (src[i] == '+') {
+            out += ' ';
+        }
+        else {
+            out += src[i];
+        }
+    }
+    return out;
+}
+
+std::string safeUriDecode(const std::string& src, int max_times) {
+    std::string current = src;
+    for (int i = 0; i < max_times; ++i) {
+        std::string decoded = uriDecodeSinglePass(current);
+        if (decoded == current)
+            break;
+        current = decoded;
+    }
+    return current;
+}
+
+///////////////////////////////////////////////////////////////////////////////////end

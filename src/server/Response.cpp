@@ -223,7 +223,7 @@ void Server::buildResponse(Client& c) {
 	ServerConfig& srv = *srv_ptr;
 
 	// ⭐ Send 421 if hostname doesn't match any server_name
-	if (!hostname_matched) {
+	/*if (!hostname_matched) {
 		std::string body = "<html><body><h1>421 Misdirected Request</h1>"
 		                   "<p>Hostname not configured on this server</p></body></html>";
 		std::ostringstream oss;
@@ -238,7 +238,7 @@ void Server::buildResponse(Client& c) {
 		std::cout << "[RESPONSE] 421: Hostname '" << c.getHeader()["Host"] 
 		          << "' not configured" << std::endl;
 		return;
-	}
+	}*/
     // Early exit for errors set during request parsing (400, 413)
     if (c.getErrorCode() != 0) {
         std::string msg = (c.getErrorCode() == 413) ? "Content Too Large" : "Bad Request";
@@ -246,6 +246,22 @@ void Server::buildResponse(Client& c) {
         c.setFileSize(c.sendBuf().size());
         return;
     }
+        if (!hostname_matched) {
+                std::string body = "<html><body><h1>421 Misdirected Request</h1>"
+                                   "<p>Hostname not configured on this server</p></body></html>";
+                std::ostringstream oss;
+                oss << "HTTP/1.1 421 Misdirected Request\r\n"
+                    << "Server: Webserv/1.0\r\n"
+                    << "Content-Type: text/html\r\n"
+                    << "Content-Length: " << body.size() << "\r\n"
+                    << "Connection: close\r\n\r\n"
+                    << body;
+                c.sendBuf() = oss.str();
+                c.setFileSize(c.sendBuf().size());
+                std::cout << "[RESPONSE] 421: Hostname '" << c.getHeader()["Host"] 
+                          << "' not configured" << std::endl;
+                return;
+        }
 
     LocationConfig* loc = matchLocation(srv, c.getPath());
 

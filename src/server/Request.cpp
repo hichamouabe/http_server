@@ -1,6 +1,6 @@
 #include "Server.hpp"
 #include <sstream>
-
+#include "Utils.hpp"
 
 const size_t MAX_REQUEST_LINE = 8192;      // 8KB
 const size_t MAX_HEADER_LINE = 8192;       // 8KB per header
@@ -60,8 +60,10 @@ static	size_t parseRequestLine(Client& c) {
 		path = rawpath.substr(0, qmark);
 		query = rawpath.substr(qmark);
 	}
-
+	path = safeUriDecode(path, 10);
+	std::cout << " -----" << path << " ---- " << std::endl;
 	std::string safe = normalizePath(path);
+	std::cout << " -----" << safe << " ---- " << std::endl;
 	if (safe.empty()) return std::string::npos;
 
 	c.setMethod(method);
@@ -125,6 +127,9 @@ void	Server::handleRequest(int fd) {
 			if (c.recvBuf().size() > MAX_REQUEST_LINE) {
 				c.setErrorCode(431);
 				c.setState(PROCESS_REQUEST);
+				buildResponse(c);
+				c.setState(WRITE_RESPONSE);
+				modifyEpoll(fd, EPOLLOUT);
 				break;
 			}
 			///////////////////////////////////////////////// end of the max check in request line /////////
@@ -132,8 +137,12 @@ void	Server::handleRequest(int fd) {
 
 			size_t consumed = parseRequestLine(c);
 			if (consumed == std::string::npos) {
-				c.setErrorCode(400);
+				std::cout << "whaaaaaaaaaaaaaaat\n";
+				c.setErrorCode(403);
 				c.setState(PROCESS_REQUEST);
+			    	buildResponse(c);  // ← Build error response immediately
+    				c.setState(WRITE_RESPONSE);
+    				modifyEpoll(fd, EPOLLOUT);
 				break;
 			}
 			c.recvBuf().erase(0, consumed); // mss7 consumed part 
@@ -144,6 +153,9 @@ void	Server::handleRequest(int fd) {
 			if (c.recvBuf().size() > MAX_HEADERS_SIZE) {
 				c.setErrorCode(431);
 				c.setState(PROCESS_REQUEST);
+				buildResponse(c);
+				c.setState(WRITE_RESPONSE);
+				modifyEpoll(fd, EPOLLOUT);
 				break;
 			}
 			///////////////////////////////////////////////////////////////end/////////////////
@@ -194,6 +206,9 @@ void	Server::handleRequest(int fd) {
 				if (max_body > 0 && cl > max_body) {
 					c.setErrorCode(413);
 					c.setState(PROCESS_REQUEST);
+					buildResponse(c);
+					c.setState(WRITE_RESPONSE);
+					modifyEpoll(fd, EPOLLOUT);
 					break;
 				}
 
