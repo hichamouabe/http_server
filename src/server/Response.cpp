@@ -3,84 +3,153 @@
 #include <dirent.h>
 #include "CGI.hpp"
 
-// mime types
-static std::string getMimeType(const std::string& path) {
-	size_t dot = path.rfind('.');
-	if (dot == std::string::npos) return "application/octet-stream";
-	std::string ext = path.substr(dot);
-	if (ext == ".html" || ext == ".htm") return "text/html";
-	if (ext == ".css") return "text/css";
-	if (ext == ".js") return "application/javascript";
-	if (ext == ".json") return "application/json";
-	if (ext == ".png") return "image/png";
-	if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
-	if (ext == ".gif") return "image/gif";
-	if (ext == ".ico") return "image/x-icon";
-	if (ext == ".svg") return "image/svg+xml";
-	if (ext == ".mp4") return "video/mp4";
-	if (ext == ".pdf") return "application/pdf";
-	if (ext == ".txt") return "text/plain";
-	return "application/octet-stream";
+// ═══════════════════════════════════════════════════════════════════
+// MIME TYPE MANAGEMENT - C++98 Compatible
+// ═══════════════════════════════════════════════════════════════════
+std::map<std::string, std::string> Server::g_mimeTypeCache;
+
+bool Server::loadMimeTypes(const std::string& filepath) {
+    std::ifstream file(filepath.c_str());
+    if (!file.is_open()) {
+        std::cerr << "[ERROR] Could not load mime.types from: " << filepath << std::endl;
+        g_mimeTypeCache[".html"] = "text/html";
+        g_mimeTypeCache[".css"] = "text/css";
+        g_mimeTypeCache[".js"] = "application/javascript";
+        g_mimeTypeCache[".json"] = "application/json";
+        g_mimeTypeCache[".png"] = "image/png";
+        g_mimeTypeCache[".jpg"] = "image/jpeg";
+        g_mimeTypeCache[".jpeg"] = "image/jpeg";
+        g_mimeTypeCache[".pdf"] = "application/pdf";
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '#')
+            continue;
+        if (line.find("types") != std::string::npos)
+            continue;
+        if (line == "}")
+            break;
+
+        size_t start = line.find_first_not_of(" \t");
+        size_t end = line.find_last_not_of(" \t;");
+        if (start == std::string::npos)
+            continue;
+        line = line.substr(start, end - start + 1);
+
+        std::istringstream iss(line);
+        std::string mimeType;
+        std::string extension;
+        
+        if (!(iss >> mimeType))
+            continue;
+
+        while (iss >> extension) {
+            if (!extension.empty() && extension[extension.size() - 1] == ';')
+                extension = extension.substr(0, extension.size() - 1);
+            if (extension[0] != '.')
+                extension = "." + extension;
+            g_mimeTypeCache[extension] = mimeType;
+        }
+    }
+    file.close();
+
+    if (g_mimeTypeCache.empty()) {
+        std::cerr << "[WARNING] mime.types file is empty, using fallback types" << std::endl;
+        return false;
+    }
+
+    std::cout << "[INFO] Loaded " << g_mimeTypeCache.size() << " MIME types from " << filepath << std::endl;
+    return true;
 }
 
-// routing (longest prefix wins)
+std::string Server::getMimeType(const std::string& path) {
+    if (path.empty())
+        return "application/octet-stream";
+    
+    size_t dot = path.rfind('.');
+    if (dot == std::string::npos)
+        return "application/octet-stream";
+    
+    std::string ext = path.substr(dot);
+    
+    for (size_t i = 0; i < ext.size(); i++) {
+        if (ext[i] >= 'A' && ext[i] <= 'Z')
+            ext[i] = ext[i] - 'A' + 'a';
+    }
+    
+    std::map<std::string, std::string>::iterator it = g_mimeTypeCache.find(ext);
+    if (it != g_mimeTypeCache.end())
+        return it->second;
+    
+    return "application/octet-stream";
+}
 
+// ═══════════════════════════════════════════════════════════════════
+// LOCATION MATCHING (longest prefix wins)
+// ═══════════════════════════════════════════════════════════════════
 static LocationConfig* matchLocation(ServerConfig& srv, const std::string& uri) {
-	LocationConfig* best = NULL;
-	size_t longest = 0;
+    LocationConfig* best = NULL;
+    size_t longest = 0;
 
-	for (size_t i = 0; i < srv.locations.size(); i++) {
-		const std::string& lp = srv.locations[i].path;
-		if (uri.find(lp) != 0) continue;
-		size_t end_idx = lp.size();
-		if (end_idx != uri.size() && uri[end_idx] != '/' && lp[lp.size() - 1] != '/')
-			continue;
-		if (lp.size() > longest) {
-			longest = lp.size();
-			best = &srv.locations[i];
-		}
-	}
-	return best;
+    for (size_t i = 0; i < srv.locations.size(); i++) {
+        const std::string& lp = srv.locations[i].path;
+        if (uri.find(lp) != 0) continue;
+        size_t end_idx = lp.size();
+        if (end_idx != uri.size() && uri[end_idx] != '/' && lp[lp.size() - 1] != '/')
+            continue;
+        if (lp.size() > longest) {
+            longest = lp.size();
+            best = &srv.locations[i];
+        }
+    }
+    return best;
 }
 
-
-// from the uri you type to the filesystem one the path that the server will use localy
-static	std::string resolvePath(const std::string& uri, LocationConfig* loc) {
-	std::string root = loc->root;
-	if (!root.empty() && root[root.size()-1] == '/')
-		root.erase(root.size()-1);
-	std::string remain = uri.substr(loc->path.size());
-	if (remain.empty() || remain[0] != '/')
-		remain = "/" + remain;
-	return root + remain;
+// ═══════════════════════════════════════════════════════════════════
+// PATH RESOLUTION (convert URI to filesystem path)
+// ═══════════════════════════════════════════════════════════════════
+static std::string resolvePath(const std::string& uri, LocationConfig* loc) {
+    std::string root = loc->root;
+    if (!root.empty() && root[root.size()-1] == '/')
+        root.erase(root.size()-1);
+    std::string remain = uri.substr(loc->path.size());
+    if (remain.empty() || remain[0] != '/')
+        remain = "/" + remain;
+    return root + remain;
 }
 
-static	std::string buildAutoindex(const std::string& uri, const std::string& dir_path) {
-	std::ostringstream html;
-	html << "<!DOCKTYPE html>\n<html><head><title>Index of " << uri << "</title></head>\n"
-		<< "<body><h1>Index of " << uri << "</h1><hr><pre>\n";
+// ═══════════════════════════════════════════════════════════════════
+// AUTOINDEX GENERATION
+// ═══════════════════════════════════════════════════════════════════
+static std::string buildAutoindex(const std::string& uri, const std::string& dir_path) {
+    std::ostringstream html;
+    html << "<!DOCTYPE html>\n<html><head><title>Index of " << uri << "</title></head>\n"
+        << "<body><h1>Index of " << uri << "</h1><hr><pre>\n";
 
-	DIR* dir = opendir(dir_path.c_str());
-	if (dir) {
-		struct dirent* entry;
-		while ((entry = readdir(dir)) != NULL) {
-			std::string name = entry->d_name;
-			if (name == ".") continue;
-			bool is_dir = (entry->d_type == DT_DIR);
-			html << "<a href=\"" << name << (is_dir ? "/" : "") << "\">"
-				<< name << (is_dir ? "/" : "") << "</a>\n";
-		}
-		closedir(dir);
-	}
-	html << "</pre><hr></body></html>\n";
-	return html.str();
+    DIR* dir = opendir(dir_path.c_str());
+    if (dir) {
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != NULL) {
+            std::string name = entry->d_name;
+            if (name == ".") continue;
+            bool is_dir = (entry->d_type == DT_DIR);
+            html << "<a href=\"" << name << (is_dir ? "/" : "") << "\">"
+                << name << (is_dir ? "/" : "") << "</a>\n";
+        }
+        closedir(dir);
+    }
+    html << "</pre><hr></body></html>\n";
+    return html.str();
 }
 
-// --- POST: FILE UPLOAD ---
+// ═══════════════════════════════════════════════════════════════════
+// FILE UPLOAD
+// ═══════════════════════════════════════════════════════════════════
 static bool saveUpload(Client& c, LocationConfig* loc) {
     if (loc->upload_store.empty()) return false;
 
-    // Try to get filename from Content-Disposition header
     std::string filename;
     std::map<std::string, std::string> hdrs = c.getHeader();
     if (hdrs.count("Content-Disposition")) {
@@ -93,7 +162,7 @@ static bool saveUpload(Client& c, LocationConfig* loc) {
                 filename = cd.substr(fn, fe - fn);
         }
     }
-    // Fall back to timestamp-based name
+
     if (filename.empty()) {
         std::ostringstream ss;
         ss << "upload_" << (size_t)time(NULL) << ".bin";
@@ -109,163 +178,159 @@ static bool saveUpload(Client& c, LocationConfig* loc) {
     return out.good();
 }
 
-// --- SERVER SELECTION ---
-// Picks the right ServerConfig based on which listen fd accepted the connection.
-// Falls back to the first config if no match found.
-/*static ServerConfig& selectServer(std::vector<ServerConfig>& configs,
-                                   const std::map<int, int>& fd_to_config,
-                                   int listen_fd) {
-    std::map<int, int>::const_iterator it = fd_to_config.find(listen_fd);
-    if (it != fd_to_config.end())
-        return configs[it->second];
-    return configs[0];
-}*/
-
+// ═══════════════════════════════════════════════════════════════════
+// HTTP STATUS MESSAGES
+// ═══════════════════════════════════════════════════════════════════
 static const char* getStatusMsg(int code) {
-	if (code == 200) return "OK";
-	if (code == 201) return "Created";
-	if (code == 204) return "No Content";
-	if (code == 301) return "Moved Permanently";
-	if (code == 403) return "Forbidden";
-	if (code == 404) return "Not Found";
-	if (code == 405) return "Method Not Allowed";
-	if (code == 500) return "Internal Server Error";
-	if (code == 504) return "Gateway Timeout";
-	return "Unknown";
-}
-//////////////////////////////////////////////////////////////////////////////////// here am gonna add the edit for implementing the virtual hosting//////
-// ═══════════════════════════════════════════════════════════════════
-// Helper: Check if hostname matches any server_name on this socket
-// ═══════════════════════════════════════════════════════════════════
-bool Server::isHostnameMatched(
-    int listen_fd,
-    const std::string& host_header
-) {
-	std::map<int, std::vector<int> >::const_iterator it = _fd_to_configs.find(listen_fd);
-	if (it == _fd_to_configs.end())
-		return false;
-
-	const std::vector<int>& config_indices = it->second;
-
-	// Extract hostname from "Host: example.com:8080"
-	std::string requested_hostname = host_header;
-	size_t colon = requested_hostname.find(':');
-	if (colon != std::string::npos)
-		requested_hostname = requested_hostname.substr(0, colon);
-
-	// Check all configs on this socket
-	for (size_t i = 0; i < config_indices.size(); i++) {
-		ServerConfig& srv = _configs[config_indices[i]];
-
-		// Check each server_name in this config
-		for (size_t j = 0; j < srv.server_names.size(); j++) {
-			if (srv.server_names[j] == requested_hostname ||
-				srv.server_names[j] == "*") {
-				return true;  // ✓ Match found
-			}
-		}
-	}
-
-	return false;  // ✗ No match found
+    if (code == 200) return "OK";
+    if (code == 201) return "Created";
+    if (code == 204) return "No Content";
+    if (code == 301) return "Moved Permanently";
+    if (code == 403) return "Forbidden";
+    if (code == 404) return "Not Found";
+    if (code == 405) return "Method Not Allowed";
+    if (code == 500) return "Internal Server Error";
+    if (code == 504) return "Gateway Timeout";
+    return "Unknown";
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Helper: Select correct config based on listening fd + Host header
-// ═══════════════════════════════════════════════════════════════════
 bool Server::selectServerByHostname(
     int listen_fd,
     const std::string& host_header,
     ServerConfig*& selected_config
 ) {
-	std::map<int, std::vector<int> >::const_iterator it = _fd_to_configs.find(listen_fd);
-	if (it == _fd_to_configs.end()) {
-		selected_config = &_configs[0];  // Fallback to first config
-		return false;
-	}
+    std::cout << "[DEBUG-VH-1] Called with Host: " << host_header << ", listen_fd: " << listen_fd << std::endl;
 
-	const std::vector<int>& config_indices = it->second;
+    std::map<int, std::vector<int> >::const_iterator it = _fd_to_configs.find(listen_fd);
+    if (it == _fd_to_configs.end()) {
+        std::cout << "[DEBUG-VH-2] listen_fd NOT found in _fd_to_configs!" << std::endl;
+        selected_config = &_configs[0];
+        return false;
+    }
 
-	// Extract hostname
-	std::string requested_hostname = host_header;
-	size_t colon = requested_hostname.find(':');
-	if (colon != std::string::npos)
-		requested_hostname = requested_hostname.substr(0, colon);
+    const std::vector<int>& config_indices = it->second;
+    std::cout << "[DEBUG-VH-3] Found " << config_indices.size() << " configs for this listen_fd" << std::endl;
 
-	// Try to find matching server_name
-	for (size_t i = 0; i < config_indices.size(); i++) {
-		ServerConfig& srv = _configs[config_indices[i]];
+    // Extract hostname from "Host: example.com:8080"
+    std::string requested_hostname = host_header;
+    size_t colon = requested_hostname.find(':');
+    if (colon != std::string::npos)
+        requested_hostname = requested_hostname.substr(0, colon);
 
-		for (size_t j = 0; j < srv.server_names.size(); j++) {
-			if (srv.server_names[j] == requested_hostname ||
-				srv.server_names[j] == "*") {
-				selected_config = &srv;
-				return true;  // ✓ Match found!
-			}
-		}
-	}
+    std::cout << "[DEBUG-VH-4] Requested hostname (without port): '" << requested_hostname << "'" << std::endl;
 
-	// No match - return first config for this socket
-	selected_config = &_configs[config_indices[0]];
-	return false;  // ✗ No match
+    // Check if ANY config has empty server_names (catch-all)
+    bool has_catch_all = false;
+    int catch_all_idx = -1;
+    for (size_t i = 0; i < config_indices.size(); i++) {
+        ServerConfig& srv = _configs[config_indices[i]];
+        if (srv.server_names.empty()) {
+            has_catch_all = true;
+            catch_all_idx = i;
+            std::cout << "[DEBUG-VH-4b] Found catch-all (no server_name) at config index " << i << std::endl;
+            break;
+        }
+    }
+
+    // Print all configs and their server_names
+    for (size_t i = 0; i < config_indices.size(); i++) {
+        int config_idx = config_indices[i];
+        ServerConfig& srv = _configs[config_idx];
+        std::cout << "[DEBUG-VH-5] Config " << i << " (index=" << config_idx << ") has " 
+                  << srv.server_names.size() << " server_name(s): ";
+        for (size_t j = 0; j < srv.server_names.size(); j++) {
+            std::cout << "'" << srv.server_names[j] << "' ";
+        }
+        std::cout << std::endl;
+    }
+
+    // Step 1: Try exact hostname match
+    std::cout << "[DEBUG-VH-6] Step 1: Looking for exact hostname match..." << std::endl;
+    for (size_t i = 0; i < config_indices.size(); i++) {
+        int config_idx = config_indices[i];
+        ServerConfig& srv = _configs[config_idx];
+        
+        for (size_t j = 0; j < srv.server_names.size(); j++) {
+            std::cout << "[DEBUG-VH-7] Checking if '" << srv.server_names[j] 
+                      << "' == '" << requested_hostname << "'" << std::endl;
+            
+            if (srv.server_names[j] == requested_hostname) {
+                std::cout << "[DEBUG-VH-8] ✓ EXACT MATCH FOUND at config " << config_idx << std::endl;
+                selected_config = &srv;
+                return true;
+            }
+            
+            if (srv.server_names[j] == "*") {
+                std::cout << "[DEBUG-VH-9] ✓ WILDCARD MATCH FOUND at config " << config_idx << std::endl;
+                selected_config = &srv;
+                return true;
+            }
+        }
+    }
+
+    // Step 2: If no exact match, check if there's a catch-all server
+    if (has_catch_all) {
+        std::cout << "[DEBUG-VH-11] No exact match, but catch-all exists. Using catch-all config." << std::endl;
+        selected_config = &_configs[config_indices[catch_all_idx]];
+        return false;
+    }
+
+    // Step 3: No exact match AND no catch-all = MISDIRECTED REQUEST
+    std::cout << "[DEBUG-VH-12] ✗ NO MATCH and NO CATCH-ALL! This is a 421 error." << std::endl;
+    selected_config = &_configs[config_indices[0]];  // Set to something valid, but we'll reject in buildResponse
+    return false;  // Return false to signal error
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////end
-// --- BUILD RESPONSE ---
+// ═══════════════════════════════════════════════════════════════════
+// BUILD RESPONSE (main handler)
+// ═══════════════════════════════════════════════════════════════════
 void Server::buildResponse(Client& c) {
-    //ServerConfig& srv = selectServer(_configs, _fd_to_config, c.getListenFd());
-	/////////////////////////////////////////////////////////////////////////////////////////// that edit for virtual hosting //////////////
-	ServerConfig* srv_ptr = NULL;
-	bool hostname_matched = selectServerByHostname(
-		c.getListenFd(),
-		c.getHeader()["Host"],
-		srv_ptr
-	);
-	ServerConfig& srv = *srv_ptr;
+    std::cout << "\n╔════════════════════════════════════════════════════════════════╗" << std::endl;
+    std::cout << "║ BUILD RESPONSE - Virtual Hosting Debug" << std::endl;
+    std::cout << "╚════════════════════════════════════════════════════════════════╝" << std::endl;
+    
+    // Select server by hostname
+    ServerConfig* srv_ptr = NULL;
+    std::string host_header = c.getHeader()["Host"];
+    std::cout << "[VH-START] Host header: '" << host_header << "'" << std::endl;
+    
+    bool matched = selectServerByHostname(c.getListenFd(), host_header, srv_ptr);
+    ServerConfig& srv = *srv_ptr;
+    
+    std::cout << "[VH-RESULT] Server names in selected config: ";
+    for (size_t i = 0; i < srv.server_names.size(); i++)
+        std::cout << "'" << srv.server_names[i] << "' ";
+    std::cout << std::endl;
 
-	// ⭐ Send 421 if hostname doesn't match any server_name
-	/*if (!hostname_matched) {
-		std::string body = "<html><body><h1>421 Misdirected Request</h1>"
-		                   "<p>Hostname not configured on this server</p></body></html>";
-		std::ostringstream oss;
-		oss << "HTTP/1.1 421 Misdirected Request\r\n"
-		    << "Server: Webserv/1.0\r\n"
-		    << "Content-Type: text/html\r\n"
-		    << "Content-Length: " << body.size() << "\r\n"
-		    << "Connection: close\r\n\r\n"
-		    << body;
-		c.sendBuf() = oss.str();
-		c.setFileSize(c.sendBuf().size());
-		std::cout << "[RESPONSE] 421: Hostname '" << c.getHeader()["Host"] 
-		          << "' not configured" << std::endl;
-		return;
-	}*/
-    // Early exit for errors set during request parsing (400, 413)
+    // ⭐ Check if this is a misdirected request (no match + all servers have explicit names)
+    // If matched=false AND selected server has server_names = MISDIRECTED
+    if (!matched && !srv.server_names.empty()) {
+        std::cout << "[VH-ERROR] 421: Hostname '" << host_header << "' not configured!" << std::endl;
+        std::string body = "<html><body><h1>421 Misdirected Request</h1>"
+                           "<p>Hostname '" + host_header + "' not configured on this server</p></body></html>";
+        std::ostringstream oss;
+        oss << "HTTP/1.1 421 Misdirected Request\r\n"
+            << "Server: Webserv/1.0\r\n"
+            << "Content-Type: text/html\r\n"
+            << "Content-Length: " << body.size() << "\r\n"
+            << "Connection: close\r\n\r\n"
+            << body;
+        c.sendBuf() = oss.str();
+        c.setFileSize(c.sendBuf().size());
+        return;
+    }
+
+    // Handle early errors (400, 413)
     if (c.getErrorCode() != 0) {
         std::string msg = (c.getErrorCode() == 413) ? "Content Too Large" : "Bad Request";
         c.sendBuf() = buildErrorResponse(c.getErrorCode(), msg, srv);
         c.setFileSize(c.sendBuf().size());
         return;
     }
-        if (!hostname_matched) {
-                std::string body = "<html><body><h1>421 Misdirected Request</h1>"
-                                   "<p>Hostname not configured on this server</p></body></html>";
-                std::ostringstream oss;
-                oss << "HTTP/1.1 421 Misdirected Request\r\n"
-                    << "Server: Webserv/1.0\r\n"
-                    << "Content-Type: text/html\r\n"
-                    << "Content-Length: " << body.size() << "\r\n"
-                    << "Connection: close\r\n\r\n"
-                    << body;
-                c.sendBuf() = oss.str();
-                c.setFileSize(c.sendBuf().size());
-                std::cout << "[RESPONSE] 421: Hostname '" << c.getHeader()["Host"] 
-                          << "' not configured" << std::endl;
-                return;
-        }
 
     LocationConfig* loc = matchLocation(srv, c.getPath());
 
-    // --- 1. Redirect ---
+    // --- 1. REDIRECT ---
     if (loc && loc->return_url.first != 0) {
         std::ostringstream oss;
         int code = loc->return_url.first;
@@ -279,7 +344,7 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    // --- 2. Method validation ---
+    // --- 2. METHOD VALIDATION ---
     if (loc && !loc->allowed_methods.empty()) {
         bool allowed = false;
         for (size_t i = 0; i < loc->allowed_methods.size(); ++i)
@@ -292,7 +357,7 @@ void Server::buildResponse(Client& c) {
         }
     }
 
-    // No location matched and no root configured -> 404
+    // No location or root -> 404
     if (!loc || loc->root.empty()) {
         c.sendBuf() = buildErrorResponse(404, "Not Found", srv);
         c.setFileSize(c.sendBuf().size());
@@ -300,10 +365,9 @@ void Server::buildResponse(Client& c) {
     }
 
     std::string physical = resolvePath(c.getPath(), loc);
-    std::cout << "[ROUTE] " << c.getMethod() << " " << c.getPath()
-              << " -> " << physical << std::endl;
+    std::cout << "[ROUTE] " << c.getMethod() << " " << c.getPath() << " -> " << physical << std::endl;
 
-    // === CGI HANDLING ===
+    // --- 3. CGI HANDLING ---
     if (!loc->cgi_pass.empty()) {
         size_t dot = physical.rfind('.');
         if (dot != std::string::npos) {
@@ -362,7 +426,7 @@ void Server::buildResponse(Client& c) {
         }
     }
 
-    // --- 3. DELETE ---
+    // --- 4. DELETE ---
     if (c.getMethod() == "DELETE") {
         struct stat st;
         if (physical.empty() || stat(physical.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
@@ -382,7 +446,7 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    // --- 4. POST (file upload) ---
+    // --- 5. POST (file upload) ---
     if (c.getMethod() == "POST") {
         if (loc && !loc->upload_store.empty()) {
             if (saveUpload(c, loc)) {
@@ -399,7 +463,6 @@ void Server::buildResponse(Client& c) {
                 c.sendBuf() = buildErrorResponse(500, "Internal Server Error", srv);
             }
         } else {
-            // POST to a route without upload_store -> 204
             std::ostringstream oss;
             oss << "HTTP/1.1 204 No Content\r\n"
                 << "Server: Webserv/1.0\r\n"
@@ -411,7 +474,7 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    // --- 5. GET ---
+    // --- 6. GET ---
     struct stat st;
 
     if (stat(physical.c_str(), &st) != 0) {
@@ -444,7 +507,7 @@ void Server::buildResponse(Client& c) {
             if (stat(index_path.c_str(), &ist) == 0 && S_ISREG(ist.st_mode)) {
                 physical = index_path;
                 st = ist;
-                goto serve_file; // found index, fall through to file serving
+                goto serve_file;
             }
         }
 
@@ -485,8 +548,6 @@ serve_file:
         return;
     }
 
-    // For file responses, file_size is the actual file size.
-    // bytes_sent tracks file bytes only (header is separate via sendBuf).
     c.setFileSize(st.st_size);
     {
         std::ostringstream oss;
@@ -500,11 +561,9 @@ serve_file:
     std::cout << "[RESPONSE] 200 OK: " << physical << std::endl;
 }
 
-// --- SEND RESPONSE ---
-// Two-phase send: first drain sendBuf (headers + small inline bodies),
-// then stream the file if one is open.
-// bytes_sent ONLY counts file bytes — it is never incremented during header sending.
-// This fixes the previous bug where inline responses never triggered "done".
+// ═══════════════════════════════════════════════════════════════════
+// SEND RESPONSE (streaming)
+// ═══════════════════════════════════════════════════════════════════
 void Server::handleResponse(int fd) {
     Client& c = *clients[fd];
     char chunk[8192];
@@ -517,12 +576,11 @@ void Server::handleResponse(int fd) {
             if (c.sendBuf().empty())
                 c.setHeaderSent(true);
         } else if (n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            return; // epoll will call us again when writable
+            return;
         } else {
             c.setState(CLOSED);
             return;
         }
-        // Still have header bytes to send
         if (!c.headerSent()) return;
     }
 
@@ -542,14 +600,11 @@ void Server::handleResponse(int fd) {
                 return;
             }
             if (n > 0) c.setBytesSent(static_cast<size_t>(n));
-            return; // always return here; check done on next event
+            return;
         }
-        // File fully sent — fall through to done logic
     }
 
     // Phase 3: done
-    // For inline responses: sendBuf is empty and no file -> done immediately.
-    // For file responses: bytes_sent >= file_size -> done.
     bool file_done = !c.file_stream.is_open() ||
                      (c.getBytesSent() >= c.getFileSize());
 

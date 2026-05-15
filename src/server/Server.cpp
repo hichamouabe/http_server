@@ -3,6 +3,7 @@
 
 Server::Server() {
 	epfd = epoll_create1(0);
+	loadMimeTypes("conf/mime.types");
 	if (epfd == -1)
 		throw std::runtime_error("epoll_create1 failed");
 }

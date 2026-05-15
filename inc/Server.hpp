@@ -129,6 +129,10 @@ class Server {
 	//	std::map<int, int>		_fd_to_config;
 
 		std::map<int, std::vector<int> > _fd_to_configs;
+		// MIME type management
+		static std::map<std::string, std::string> g_mimeTypeCache;
+		bool	loadMimeTypes(const std::string& filepath);
+		std::string getMimeType(const std::string& path);
 		// Socket.cpp methods
 		void	setNonBlocking(int fd);
 		int	createListenSocket(const std::string& host, int port);
