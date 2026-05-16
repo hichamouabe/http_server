@@ -133,6 +133,7 @@ class Server {
 		static std::map<std::string, std::string> g_mimeTypeCache;
 		bool	loadMimeTypes(const std::string& filepath);
 		std::string getMimeType(const std::string& path);
+		std::map<std::string, std::string> _mimeTypeCache;
 		// Socket.cpp methods
 		void	setNonBlocking(int fd);
 		int	createListenSocket(const std::string& host, int port);

@@ -6,20 +6,19 @@
 // ═══════════════════════════════════════════════════════════════════
 // MIME TYPE MANAGEMENT - C++98 Compatible
 // ═══════════════════════════════════════════════════════════════════
-std::map<std::string, std::string> Server::g_mimeTypeCache;
-
 bool Server::loadMimeTypes(const std::string& filepath) {
     std::ifstream file(filepath.c_str());
     if (!file.is_open()) {
         std::cerr << "[ERROR] Could not load mime.types from: " << filepath << std::endl;
-        g_mimeTypeCache[".html"] = "text/html";
-        g_mimeTypeCache[".css"] = "text/css";
-        g_mimeTypeCache[".js"] = "application/javascript";
-        g_mimeTypeCache[".json"] = "application/json";
-        g_mimeTypeCache[".png"] = "image/png";
-        g_mimeTypeCache[".jpg"] = "image/jpeg";
-        g_mimeTypeCache[".jpeg"] = "image/jpeg";
-        g_mimeTypeCache[".pdf"] = "application/pdf";
+        // Fallbacks
+        _mimeTypeCache[".html"] = "text/html";
+        _mimeTypeCache[".css"] = "text/css";
+        _mimeTypeCache[".js"] = "application/javascript";
+        _mimeTypeCache[".json"] = "application/json";
+        _mimeTypeCache[".png"] = "image/png";
+        _mimeTypeCache[".jpg"] = "image/jpeg";
+        _mimeTypeCache[".jpeg"] = "image/jpeg";
+        _mimeTypeCache[".pdf"] = "application/pdf";
         return false;
     }
 
@@ -34,8 +33,9 @@ bool Server::loadMimeTypes(const std::string& filepath) {
 
         size_t start = line.find_first_not_of(" \t");
         size_t end = line.find_last_not_of(" \t;");
-        if (start == std::string::npos)
+        if (start == std::string::npos || end == std::string::npos)
             continue;
+            
         line = line.substr(start, end - start + 1);
 
         std::istringstream iss(line);
@@ -50,17 +50,17 @@ bool Server::loadMimeTypes(const std::string& filepath) {
                 extension = extension.substr(0, extension.size() - 1);
             if (extension[0] != '.')
                 extension = "." + extension;
-            g_mimeTypeCache[extension] = mimeType;
+            _mimeTypeCache[extension] = mimeType;
         }
     }
     file.close();
 
-    if (g_mimeTypeCache.empty()) {
+    if (_mimeTypeCache.empty()) {
         std::cerr << "[WARNING] mime.types file is empty, using fallback types" << std::endl;
         return false;
     }
 
-    std::cout << "[INFO] Loaded " << g_mimeTypeCache.size() << " MIME types from " << filepath << std::endl;
+    std::cout << "[INFO] Loaded " << _mimeTypeCache.size() << " MIME types from " << filepath << std::endl;
     return true;
 }
 
@@ -68,19 +68,24 @@ std::string Server::getMimeType(const std::string& path) {
     if (path.empty())
         return "application/octet-stream";
     
+    size_t slash = path.rfind('/');
     size_t dot = path.rfind('.');
-    if (dot == std::string::npos)
+    
+    // Ensure the dot is actually part of the filename, not a directory name
+    // e.g., /my.folder/file -> no extension
+    if (dot == std::string::npos || (slash != std::string::npos && dot < slash))
         return "application/octet-stream";
     
     std::string ext = path.substr(dot);
     
+    // Lowercase the extension for safe lookup (e.g., .JPG -> .jpg)
     for (size_t i = 0; i < ext.size(); i++) {
         if (ext[i] >= 'A' && ext[i] <= 'Z')
             ext[i] = ext[i] - 'A' + 'a';
     }
     
-    std::map<std::string, std::string>::iterator it = g_mimeTypeCache.find(ext);
-    if (it != g_mimeTypeCache.end())
+    std::map<std::string, std::string>::const_iterator it = _mimeTypeCache.find(ext);
+    if (it != _mimeTypeCache.end())
         return it->second;
     
     return "application/octet-stream";
@@ -186,9 +191,16 @@ static const char* getStatusMsg(int code) {
     if (code == 201) return "Created";
     if (code == 204) return "No Content";
     if (code == 301) return "Moved Permanently";
+    if (code == 302) return "Found";
+    if (code == 307) return "Temporary Redirect";
+    if (code == 308) return "Permanent Redirect";
+    if (code == 400) return "Bad Request";
     if (code == 403) return "Forbidden";
     if (code == 404) return "Not Found";
     if (code == 405) return "Method Not Allowed";
+    if (code == 413) return "Content Too Large";
+    if (code == 421) return "Misdirected Request";
+    if (code == 431) return "Request Header Fields Too Large";
     if (code == 500) return "Internal Server Error";
     if (code == 504) return "Gateway Timeout";
     return "Unknown";
@@ -320,9 +332,9 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    // Handle early errors (400, 413)
+// Handle early errors (400, 413, 431, etc)
     if (c.getErrorCode() != 0) {
-        std::string msg = (c.getErrorCode() == 413) ? "Content Too Large" : "Bad Request";
+        std::string msg = getStatusMsg(c.getErrorCode());
         c.sendBuf() = buildErrorResponse(c.getErrorCode(), msg, srv);
         c.setFileSize(c.sendBuf().size());
         return;
@@ -334,7 +346,7 @@ void Server::buildResponse(Client& c) {
     if (loc && loc->return_url.first != 0) {
         std::ostringstream oss;
         int code = loc->return_url.first;
-        oss << "HTTP/1.1 " << code << " Moved\r\n"
+        oss << "HTTP/1.1 " << code << " " << getStatusMsg(code) << "\r\n"
             << "Location: " << loc->return_url.second << "\r\n"
             << "Content-Length: 0\r\n"
             << "Connection: close\r\n\r\n";
