@@ -157,6 +157,8 @@ static bool saveUpload(Client& c, LocationConfig* loc) {
 
     std::string filename;
     std::map<std::string, std::string> hdrs = c.getHeader();
+    
+    // Look for filename in headers (Raw binary upload)
     if (hdrs.count("Content-Disposition")) {
         std::string cd = hdrs["Content-Disposition"];
         size_t fn = cd.find("filename=\"");
@@ -168,17 +170,26 @@ static bool saveUpload(Client& c, LocationConfig* loc) {
         }
     }
 
+    // Fallback if no filename is found
     if (filename.empty()) {
         std::ostringstream ss;
         ss << "upload_" << (size_t)time(NULL) << ".bin";
         filename = ss.str();
     }
 
+    // Resolve where to save the file
     std::string store = loc->upload_store;
+    if (store.empty()) store = ".";
     if (store[store.size()-1] != '/') store += "/";
 
-    std::ofstream out((store + filename).c_str(), std::ios::binary);
-    if (!out.is_open()) return false;
+    std::string full_path = store + filename;
+
+    std::ofstream out(full_path.c_str(), std::ios::binary);
+    if (!out.is_open()) {
+        std::cerr << "[ERROR] Cannot open upload file: " << full_path << std::endl;
+        return false;
+    }
+    
     out.write(c.getBody().c_str(), c.getBody().size());
     return out.good();
 }
