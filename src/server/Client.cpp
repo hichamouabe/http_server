@@ -123,6 +123,7 @@ int Client::getTimeoutForState() const {
 		case READ_REQUEST_HEADER: return 10;   // 10 sec for headers
 		case READ_BODY:           return 30;   // 30 sec for body upload
 		case PROCESS_REQUEST:     return 60;   // 60 sec to process
+		case PROCESS_CGI:	  return 30;
 		case WRITE_RESPONSE:      return 30;   // 30 sec to send response
 		case CLOSED:              return 0;
 		default:                  return 30;

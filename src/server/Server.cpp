@@ -1,6 +1,7 @@
 #include "Server.hpp"
 #include <sstream>
-
+#include <sys/wait.h>
+#include <signal.h>
 Server::Server() {
 	epfd = epoll_create1(0);
 	loadMimeTypes("conf/mime.types");
@@ -129,11 +130,26 @@ void	Server::acceptClients(int listen_fd) {
 	}
 }
 
-void	Server::disconnect(int fd) {
-	epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
-	close(fd);
-	delete clients[fd];
-	clients.erase(fd);
-	std::cout << "[DISCONNECT] fd=" << fd << std::endl;
+void Server::disconnect(int fd) {
+    Client* c = clients[fd];
+    
+    // --- NEW CGI CLEANUP ---
+    if (c->cgi_pid > 0) {
+        std::cout << "[CGI] Killing stuck/abandoned CGI process PID=" << c->cgi_pid << std::endl;
+        kill(c->cgi_pid, SIGKILL);
+        waitpid(c->cgi_pid, NULL, 0); // Prevent zombie process
+    }
+    if (c->cgi_fd > 0) {
+        epoll_ctl(epfd, EPOLL_CTL_DEL, c->cgi_fd, NULL);
+        close(c->cgi_fd);
+        cgi_clients.erase(c->cgi_fd); // Remove from CGI map
+    }
+    // -----------------------
+
+    epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
+    close(fd);
+    delete c;
+    clients.erase(fd);
+    std::cout << "[DISCONNECT] fd=" << fd << std::endl;
 }
 

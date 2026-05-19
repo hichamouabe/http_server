@@ -70,33 +70,38 @@ void Server::eventLoop() {
 	while (true) {
 		int n = epoll_wait(epfd, events, MAX_EVENTS, EPOLL_TIMEOUT_MS);
 
-		// ========== 1. PROCESS NETWORK EVENTS ==========
-		for (int i = 0; i < n; ++i) {
-			int fd = events[i].data.fd;
+			// ========== 1. PROCESS NETWORK EVENTS ==========
+        for (int i = 0; i < n; ++i) {
+            int fd = events[i].data.fd;
 
-			// error or hangup clean up the client
-			if (events[i].events & (EPOLLERR | EPOLLHUP)) {
-				disconnect(fd);
-				continue;
-			}
-			if (isListenFd(fd)) {
-				// new connection
-				acceptClients(fd);
-			}
-			else {
-				Client& c = *clients[fd];
-				c.updateActivityTime();  // Client is active, reset timer
+            // Is this a CGI pipe event?
+            if (cgi_clients.find(fd) != cgi_clients.end()) {
+                handleCGIRead(fd);
+                continue; // Move to the next event, this was just CGI
+            }
 
-				if (c.getState() < PROCESS_REQUEST)
-					handleRequest(fd);
-				if ( c.getState() == WRITE_RESPONSE)
-					handleResponse(fd);
-				if (c.getState() == CLOSED)
-					disconnect(fd);
-			}
-		}
+            // error or hangup clean up the client
+            if (events[i].events & (EPOLLERR | EPOLLHUP)) {
+                disconnect(fd);
+                continue;
+            }
+            if (isListenFd(fd)) {
+                // new connection
+                acceptClients(fd);
+            }
+            else {
+                // Regular client socket
+                Client& c = *clients[fd];
+                c.updateActivityTime();  // Client is active, reset timer
 
-		// ========== 2. TIMEOUT SWEEP (runs every 1 second) ==========
+                if (c.getState() < PROCESS_REQUEST)
+                    handleRequest(fd);
+                if (c.getState() == WRITE_RESPONSE)
+                    handleResponse(fd);
+                if (c.getState() == CLOSED)
+                    disconnect(fd);
+            }
+        }	// ========== 2. TIMEOUT SWEEP (runs every 1 second) ==========
 		time_t now = std::time(NULL);
 
 		// Only run the O(N) map sweep once per second

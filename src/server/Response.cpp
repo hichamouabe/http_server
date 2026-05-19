@@ -2,6 +2,7 @@
 #include <sstream>
 #include <dirent.h>
 #include "CGI.hpp"
+#include <sys/wait.h>
 
 // ═══════════════════════════════════════════════════════════════════
 // MIME TYPE MANAGEMENT - C++98 Compatible
@@ -413,6 +414,7 @@ void Server::buildResponse(Client& c) {
                 size_t qmark = c.getPath().find('?');
                 std::string query = (qmark != std::string::npos) ? c.getPath().substr(qmark + 1) : "";
 
+// Setup the CGI parser
                 CGI cgi;
                 cgi.setMethod(c.getMethod());
                 cgi.setPath(physical);
@@ -421,29 +423,32 @@ void Server::buildResponse(Client& c) {
                 cgi.setContentType(c.getHeader().count("Content-Type") ? c.getHeader()["Content-Type"] : "");
                 cgi.setHost(c.getHeader().count("Host") ? c.getHeader()["Host"] : "localhost");
 
-                int result = cgi.execute(interpreter, 30);
+                pid_t pid = -1;
+                int pipe_fd = cgi.executeAsync(interpreter, pid);
 
-                if (cgi.hasError()) {
-                    c.sendBuf() = buildErrorResponse(result, getStatusMsg(result), srv);
+                if (pipe_fd < 0) {
+                    c.sendBuf() = buildErrorResponse(500, "Internal Server Error", srv);
                     c.setFileSize(c.sendBuf().size());
                     return;
                 }
 
-                int status = cgi.getStatus();
-                std::string body = cgi.getBody();
+                // Link the pipe to the client
+                c.cgi_fd = pipe_fd;
+                c.cgi_pid = pid;
+                c.cgi_raw_output.clear();
 
-                std::ostringstream oss;
-                oss << "HTTP/1.1 " << status << " " << getStatusMsg(status) << "\r\n"
-                    << "Server: Webserv/1.0\r\n"
-                    << "Content-Length: " << body.size() << "\r\n"
-                    << "Content-Type: text/html\r\n"
-                    << "Connection: close\r\n\r\n";
+                // Add the CGI pipe to epoll (for reading)
+                struct epoll_event ev;
+                ev.events = EPOLLIN;
+                ev.data.fd = pipe_fd;
+                epoll_ctl(epfd, EPOLL_CTL_ADD, pipe_fd, &ev);
 
-                if (!body.empty())
-                    oss << body;
-
-                c.sendBuf() = oss.str();
-                c.setFileSize(c.sendBuf().size());
+                // Add to our CGI tracker map
+                cgi_clients[pipe_fd] = &c;
+                
+                // Change state and return! The server keeps running!
+                c.setState(PROCESS_CGI);
+                std::cout << "[CGI] Async process started, PID: " << pid << " on FD: " << pipe_fd << std::endl;
                 return;
             }
         }
@@ -497,7 +502,7 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    // --- 6. GET ---
+// --- 6. GET ---
     struct stat st;
 
     if (stat(physical.c_str(), &st) != 0) {
@@ -512,7 +517,7 @@ void Server::buildResponse(Client& c) {
         // Missing trailing slash -> redirect
         if (c.getPath()[c.getPath().size()-1] != '/') {
             std::ostringstream oss;
-            oss << "HTTP/1.1 301 Moved Permanently\r\n"
+            oss << "HTTP/1.1 301 " << getStatusMsg(301) << "\r\n"
                 << "Location: " << c.getPath() << "/\r\n"
                 << "Content-Length: 0\r\n"
                 << "Connection: close\r\n\r\n";
@@ -522,6 +527,7 @@ void Server::buildResponse(Client& c) {
         }
 
         // Try index file
+        bool index_found = false;
         if (!loc->index.empty()) {
             std::string index_path = physical;
             if (index_path[index_path.size()-1] != '/') index_path += "/";
@@ -530,34 +536,35 @@ void Server::buildResponse(Client& c) {
             if (stat(index_path.c_str(), &ist) == 0 && S_ISREG(ist.st_mode)) {
                 physical = index_path;
                 st = ist;
-                goto serve_file;
+                index_found = true; // We found the index, proceed to file serving!
             }
         }
 
-        // Autoindex
-        if (loc->autoindex) {
-            std::string body = buildAutoindex(c.getPath(), physical);
-            std::ostringstream oss;
-            oss << "HTTP/1.1 200 OK\r\n"
-                << "Server: Webserv/1.0\r\n"
-                << "Content-Type: text/html\r\n"
-                << "Content-Length: " << body.size() << "\r\n"
-                << "Connection: " << (c.isKeepAlive() ? "keep-alive" : "close") << "\r\n\r\n"
-                << body;
-            c.sendBuf() = oss.str();
+        // If no index file was found, handle Autoindex or 403
+        if (!index_found) {
+            if (loc->autoindex) {
+                std::string body = buildAutoindex(c.getPath(), physical);
+                std::ostringstream oss;
+                oss << "HTTP/1.1 200 " << getStatusMsg(200) << "\r\n"
+                    << "Server: Webserv/1.0\r\n"
+                    << "Content-Type: text/html\r\n"
+                    << "Content-Length: " << body.size() << "\r\n"
+                    << "Connection: " << (c.isKeepAlive() ? "keep-alive" : "close") << "\r\n\r\n"
+                    << body;
+                c.sendBuf() = oss.str();
+                c.setFileSize(c.sendBuf().size());
+                std::cout << "[RESPONSE] 200 Autoindex" << std::endl;
+                return;
+            }
+
+            // Directory but no index and no autoindex -> 403
+            c.sendBuf() = buildErrorResponse(403, "Forbidden", srv);
             c.setFileSize(c.sendBuf().size());
-            std::cout << "[RESPONSE] 200 Autoindex" << std::endl;
             return;
         }
-
-        // Directory but no index and no autoindex -> 403
-        c.sendBuf() = buildErrorResponse(403, "Forbidden", srv);
-        c.setFileSize(c.sendBuf().size());
-        return;
     }
 
-serve_file:
-    // Regular file
+    // Regular file serving (Index files fall through to here naturally now)
     if (!S_ISREG(st.st_mode)) {
         c.sendBuf() = buildErrorResponse(404, "Not Found", srv);
         c.setFileSize(c.sendBuf().size());
@@ -574,7 +581,7 @@ serve_file:
     c.setFileSize(st.st_size);
     {
         std::ostringstream oss;
-        oss << "HTTP/1.1 200 OK\r\n"
+        oss << "HTTP/1.1 200 " << getStatusMsg(200) << "\r\n"
             << "Server: Webserv/1.0\r\n"
             << "Content-Length: " << st.st_size << "\r\n"
             << "Content-Type: " << getMimeType(physical) << "\r\n"
@@ -641,4 +648,61 @@ void Server::handleResponse(int fd) {
             c.setState(CLOSED);
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ASYNC CGI READING
+// ═══════════════════════════════════════════════════════════════════
+void Server::handleCGIRead(int pipe_fd) {
+    Client* c = cgi_clients[pipe_fd];
+    char buf[4096];
+
+    ssize_t n = read(pipe_fd, buf, sizeof(buf));
+
+    if (n > 0) {
+        // We read some data, append it to the client's buffer
+        c->cgi_raw_output.append(buf, n);
+        c->updateActivityTime(); // Keep the client from timing out
+    }
+    else if (n == 0) {
+        // EOF: The script has finished writing and closed the pipe!
+        std::cout << "[CGI] Process PID " << c->cgi_pid << " finished writing." << std::endl;
+
+        // 1. Cleanup the pipe and process
+        epoll_ctl(epfd, EPOLL_CTL_DEL, pipe_fd, NULL);
+        close(pipe_fd);
+        cgi_clients.erase(pipe_fd);
+        waitpid(c->cgi_pid, NULL, 0); // Clean up the zombie process
+
+        c->cgi_fd = -1;
+        c->cgi_pid = -1;
+
+        // 2. Parse the output we collected
+        CGI cgi_parser;
+        cgi_parser.parseOutput(c->cgi_raw_output);
+
+        int status = cgi_parser.getStatus();
+        std::string body = cgi_parser.getBody();
+        std::string headers = cgi_parser.getHeaders();
+
+        // 3. Build the final HTTP response
+        std::ostringstream oss;
+        oss << "HTTP/1.1 " << status << " " << getStatusMsg(status) << "\r\n"
+            << "Server: Webserv/1.0\r\n"
+            << "Content-Length: " << body.size() << "\r\n";
+
+        if (!headers.empty()) oss << headers << "\r\n";
+        else oss << "Content-Type: text/html\r\n";
+
+        oss << "Connection: " << (c->isKeepAlive() ? "keep-alive" : "close") << "\r\n\r\n";
+        if (!body.empty()) oss << body;
+
+        c->sendBuf() = oss.str();
+        c->setFileSize(c->sendBuf().size());
+
+        // 4. Switch client to WRITE_RESPONSE and wake up the client socket
+        c->setState(WRITE_RESPONSE);
+        modifyEpoll(c->getFd(), EPOLLOUT);
+    }
+    // If n == -1 and errno == EAGAIN, we just do nothing and wait for next epoll trigger
 }

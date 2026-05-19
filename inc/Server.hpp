@@ -30,6 +30,7 @@ enum State {
 	READ_REQUEST_HEADER,
 	READ_BODY,
 	PROCESS_REQUEST,
+	PROCESS_CGI,
 	WRITE_RESPONSE,
 	CLOSED
 };
@@ -60,6 +61,10 @@ class	Client {
 		time_t	last_activity_time;
 	public:
 		std::ifstream	file_stream;
+                // CGI Integration
+                int             cgi_fd;
+                pid_t           cgi_pid;
+                std::string     cgi_raw_output;
 		
 		Client();
 		explicit Client(int fd);
@@ -166,6 +171,8 @@ class Server {
 		bool	isHostnameMatched(int listen_fd, const std::string& host_header);
 		// for timeout
 		void setSocketTimeout(int fd);
+		void handleCGIRead(int pipe_fd);
+		std::map<int, Client*> cgi_clients;
 
 	public:
 		Server();
