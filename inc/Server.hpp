@@ -133,7 +133,6 @@ class Server {
 		std::map<int, Client*>		clients;
 		std::vector<ServerConfig>	_configs;
 		static const int		SOCKET_TIMEOUT = 30;
-	//	std::map<int, int>		_fd_to_config;
 
 		std::map<int, std::vector<int> > _fd_to_configs;
 		// MIME type management

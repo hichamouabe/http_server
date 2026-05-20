@@ -1,5 +1,5 @@
 #include "Utils.hpp"
-#include <algorithm> // 3la wdit transform
+#include <algorithm> 
 
 bool	isNumeric(const std::string &s) {
 	if (s.empty()) return false;
@@ -47,7 +47,6 @@ void	parse_http_code(const std::string& nb) {
 		if (code < 100 || code > 599 || nb.size() > 3) throw std::runtime_error("Error_page code (out of range 100-599): '" + nb + "'");
 	} else throw std::runtime_error("Error_page code must be numeric'" + nb + "'");
 }
-// parse Client Max Body siZe 
 void	parseCbmz(const std::string& vl) {
 	std::string nb;
 	char last = vl[vl.size() - 1];
@@ -57,7 +56,6 @@ void	parseCbmz(const std::string& vl) {
 	} else if (!isNumeric(vl)) throw std::runtime_error("client_max_body_size: invalid value'" + vl + "'");
 }
 
-// functions used on ConfigLoader (extraction had lmra machi validation)
 
 std::pair<std::string, int> parseListen(const std::string& val) {
 	std::string	ip;
@@ -91,7 +89,6 @@ size_t	parseSize(const std::string& val) {
 }
 
 
-// URI DECODING FUNCTIONS 
 inline int hexCharToInt(unsigned char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -99,7 +96,6 @@ inline int hexCharToInt(unsigned char c) {
     return 0;
 }
 
-// Highly optimized single-pass decode
 std::string uriDecodeSinglePass(const std::string& src) {
     std::string out;
     out.reserve(src.length());
@@ -136,4 +132,3 @@ std::string safeUriDecode(const std::string& src, int max_times) {
     return current;
 }
 
-///////////////////////////////////////////////////////////////////////////////////end

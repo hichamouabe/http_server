@@ -61,9 +61,9 @@ static	size_t parseRequestLine(Client& c) {
 		query = rawpath.substr(qmark);
 	}
 	path = safeUriDecode(path, 10);
-	std::cout << " -----" << path << " ---- " << std::endl;
+	std::cout << " path brefore normalization : -----" << path << " ---- " << std::endl;
 	std::string safe = normalizePath(path);
-	std::cout << " -----" << safe << " ---- " << std::endl;
+	std::cout << " path after normalization (safe) : -----" << safe << " ---- " << std::endl;
 	if (safe.empty()) return std::string::npos;
 
 	c.setMethod(method);
@@ -134,7 +134,6 @@ void	Server::handleRequest(int fd) {
 
 			size_t consumed = parseRequestLine(c);
 			if (consumed == std::string::npos) {
-				std::cout << "whaaaaaaaaaaaaaaat\n";
 				c.setErrorCode(403);
 				c.setState(PROCESS_REQUEST);
 				buildResponse(c);
