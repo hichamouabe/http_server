@@ -112,6 +112,7 @@ static void parseHeaders(Client& c) {
 void	Server::handleRequest(int fd) {
 	Client& c = *clients[fd];
 	char buf[4069];
+
 	ssize_t n = recv(fd, buf, sizeof(buf), 0);
 	if (n <= 0) {
 		c.setState(CLOSED);
@@ -121,7 +122,6 @@ void	Server::handleRequest(int fd) {
 
 	while (true) {
 		if (c.getState() == READ_REQUEST_LINE) {
-			/////////////////////////////////////////////////max request check added //////////////////////
 			if (c.recvBuf().size() > MAX_REQUEST_LINE) {
 				c.setErrorCode(431);
 				c.setState(PROCESS_REQUEST);
@@ -130,7 +130,6 @@ void	Server::handleRequest(int fd) {
 				modifyEpoll(fd, EPOLLOUT);
 				break;
 			}
-			///////////////////////////////////////////////// end of the max check in request line /////////
 			if (c.recvBuf().find("\r\n") == std::string::npos) break;
 
 			size_t consumed = parseRequestLine(c);
@@ -138,16 +137,15 @@ void	Server::handleRequest(int fd) {
 				std::cout << "whaaaaaaaaaaaaaaat\n";
 				c.setErrorCode(403);
 				c.setState(PROCESS_REQUEST);
-			    	buildResponse(c);  // ← Build error response immediately
-    				c.setState(WRITE_RESPONSE);
-    				modifyEpoll(fd, EPOLLOUT);
+				buildResponse(c);
+				c.setState(WRITE_RESPONSE);
+				modifyEpoll(fd, EPOLLOUT);
 				break;
 			}
-			c.recvBuf().erase(0, consumed); // mss7 consumed part 
+			c.recvBuf().erase(0, consumed);
 			c.setState(READ_REQUEST_HEADER);
 		}
 		else if (c.getState() == READ_REQUEST_HEADER) {
-			////////////////////////////////////////////max total headers size check ////////////
 			if (c.recvBuf().size() > MAX_HEADERS_SIZE) {
 				c.setErrorCode(431);
 				c.setState(PROCESS_REQUEST);
@@ -156,13 +154,11 @@ void	Server::handleRequest(int fd) {
 				modifyEpoll(fd, EPOLLOUT);
 				break;
 			}
-			///////////////////////////////////////////////////////////////end/////////////////
 			size_t pos = c.recvBuf().find("\r\n\r\n");
 			if (pos == std::string::npos) break;
 			parseHeaders(c);
 			c.recvBuf().erase(0, pos + 4);
 
-			// keep-alive : ida kan HTTP/1.1 rah default hiya n resusiw nfs client ila ida kant connetion:close
 			std::map<std::string, std::string> hdrs = c.getHeader();
 			std::string conn = hdrs.count("Connection") ? hdrs["Connection"] : "";
 			if (c.getVersion() == "HTTP/1.1" && conn != "close")
@@ -172,35 +168,40 @@ void	Server::handleRequest(int fd) {
 			else
 				c.setKeepAlive(false);
 
-			if (hdrs.count("Content-Length")) {
+			ServerConfig* srv_ptr = NULL;
+			selectServerByHostname(c.getListenFd(),hdrs.count("Host") ? hdrs["Host"] : "localhost", srv_ptr);
+			ServerConfig& srv = *srv_ptr;
+			size_t max_body = srv.client_max_body_size;
+
+			LocationConfig* loc = NULL;
+			size_t longest = 0;
+			for (size_t i = 0; i < srv.locations.size(); i++) {
+				const std::string& lp = srv.locations[i].path;
+				if (c.getPath().find(lp) == 0 && lp.size() > longest) {
+					size_t end_idx = lp.size();
+					if (end_idx == c.getPath().size() || 
+							c.getPath()[end_idx] == '/' || 
+							lp[lp.size()-1] == '/') {
+						longest = lp.size();
+						loc = &srv.locations[i];
+					}
+				}
+			}
+			if (loc && loc->client_max_body_size > 0)
+				max_body = loc->client_max_body_size;
+
+			// --- NEW CHUNKED DETECTION ---
+			if (hdrs.count("Transfer-Encoding") && hdrs["Transfer-Encoding"] == "chunked") {
+				c.setIsChunked(true);
+				// We still need to enforce max_body_size during chunk reading
+				c.setContentLength(max_body); 
+				c.setState(READ_BODY);
+			}
+			// --- ORIGINAL CONTENT-LENGTH LOGIC ---
+			else if (hdrs.count("Content-Length")) {
 				size_t cl = static_cast<size_t>(std::atoi(hdrs["Content-Length"].c_str()));
 				c.setContentLength(cl);
 
-				///////////////////////////////////////////////////////here we use the virtual hosting in the request //////////////////////////////////////
-				ServerConfig* srv_ptr = NULL;
-				selectServerByHostname(c.getListenFd(),hdrs.count("Host") ? hdrs["Host"] : "localhost", srv_ptr);
-				ServerConfig& srv = *srv_ptr;
-				size_t max_body = srv.client_max_body_size;
-
-				/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////end/////////////
-				//ServerConfig& srv = _configs[0];
-				//size_t max_body = srv.client_max_body_size;
-				LocationConfig* loc = NULL;
-				size_t longest = 0;
-				for (size_t i = 0; i < srv.locations.size(); i++) {
-					const std::string& lp = srv.locations[i].path;
-					if (c.getPath().find(lp) == 0 && lp.size() > longest) {
-						size_t end_idx = lp.size();
-						if (end_idx == c.getPath().size() || 
-								c.getPath()[end_idx] == '/' || 
-								lp[lp.size()-1] == '/') {
-							longest = lp.size();
-							loc = &srv.locations[i];
-						}
-					}
-				}
-				if (loc && loc->client_max_body_size > 0)
-					max_body = loc->client_max_body_size;
 				if (max_body > 0 && cl > max_body) {
 					c.setErrorCode(413);
 					c.setState(PROCESS_REQUEST);
@@ -220,13 +221,51 @@ void	Server::handleRequest(int fd) {
 			}
 		}
 		else if (c.getState() == READ_BODY) {
-			if (c.recvBuf().size() >= c.getContentLength()) {
-				c.setBody(c.recvBuf().substr(0, c.getContentLength()));
-				c.recvBuf().erase(0, c.getContentLength());
-				c.setState(PROCESS_REQUEST);
+			// --- NEW CHUNKED PARSING ---
+			if (c.getIsChunked()) {
+				while (true) {
+					size_t crlf = c.recvBuf().find("\r\n");
+					if (crlf == std::string::npos) break; // Wait for more data
+
+					std::string hex_str = c.recvBuf().substr(0, crlf);
+					char* endptr;
+					long chunk_size = std::strtol(hex_str.c_str(), &endptr, 16);
+
+					if (c.recvBuf().size() < crlf + 2 + chunk_size + 2) break; // Wait for full chunk
+
+					// Security check: ensure chunked upload doesn't exceed max_body
+					if (c.getContentLength() > 0 && c.getBody().size() + chunk_size > c.getContentLength()) {
+						c.setErrorCode(413);
+						c.setState(PROCESS_REQUEST);
+						break;
+					}
+
+					if (chunk_size == 0) {
+						c.recvBuf().erase(0, crlf + 4);
+						c.setState(PROCESS_REQUEST);
+						break;
+					}
+
+					c.setBody(c.getBody() + c.recvBuf().substr(crlf + 2, chunk_size));
+					c.recvBuf().erase(0, crlf + 2 + chunk_size + 2);
+				}
+				if (c.getState() == PROCESS_REQUEST && c.getErrorCode() == 413) {
+					buildResponse(c);
+					c.setState(WRITE_RESPONSE);
+					modifyEpoll(fd, EPOLLOUT);
+					break;
+				}
 			}
+			// --- ORIGINAL CONTENT-LENGTH PARSING ---
 			else {
-				break;
+				if (c.recvBuf().size() >= c.getContentLength()) {
+					c.setBody(c.recvBuf().substr(0, c.getContentLength()));
+					c.recvBuf().erase(0, c.getContentLength());
+					c.setState(PROCESS_REQUEST);
+				}
+				else {
+					break;
+				}
 			}
 		}
 		else if (c.getState() == PROCESS_REQUEST) {

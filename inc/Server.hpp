@@ -42,7 +42,7 @@ class	Client {
 		std::string	recv_buf;
 		std::string	send_buf;
 		State		state;
-
+		bool		is_chunked;
 		// parsed request (the data came from the client :browser)
 		std::string	method;
 		std::string	path;
@@ -121,6 +121,8 @@ class	Client {
 		int		getTimeoutForState() const;
 		bool		isInactiveFor(int seconds) const;
 		// ============================
+    		void    setIsChunked(bool c);
+    		bool    getIsChunked() const;
 };
 
 

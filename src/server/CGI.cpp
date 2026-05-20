@@ -54,24 +54,20 @@ int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
         return -1;
     }
 
-    if (pid == 0) {
+     if (pid == 0) {
         // --- CHILD PROCESS ---
         close(pipe_out[0]);
         dup2(pipe_out[1], STDOUT_FILENO);
         close(pipe_out[1]);
 
         if (_method == "POST" && !_body_in.empty()) {
-            // Open the temp file for reading
             int fd_in = open(tmp_file.c_str(), O_RDONLY);
             if (fd_in >= 0) {
-                // Delete the file from the filesystem. The OS will keep it alive 
-                // in memory until this process closes the FD. (Clean & Safe)
                 std::remove(tmp_file.c_str());
                 dup2(fd_in, STDIN_FILENO);
                 close(fd_in);
             }
         } else {
-            // For GET requests, attach STDIN to /dev/null safely
             int devnull = open("/dev/null", O_RDONLY);
             if (devnull >= 0) {
                 dup2(devnull, STDIN_FILENO);
@@ -79,14 +75,16 @@ int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
             }
         }
 
-        // EVALUATION REQUIREMENT (Page 12): "The CGI should be run in the correct 
-        // directory for relative path file access."
+        // --- THE FIX: Isolate the filename from the path ---
+        std::string exec_path = _path;
         size_t last_slash = _path.find_last_of('/');
         if (last_slash != std::string::npos) {
             std::string dir = _path.substr(0, last_slash);
             if (chdir(dir.c_str()) == -1) {
                 exit(1);
             }
+            // After changing directory, the script is just the filename in the current dir
+            exec_path = _path.substr(last_slash + 1); 
         }
 
         // Build environment
@@ -96,7 +94,9 @@ int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
         std::ostringstream content_len_oss;
         content_len_oss << _body_in.size();
         std::string env_content_length = "CONTENT_LENGTH=" + content_len_oss.str();
-        std::string env_script = "SCRIPT_FILENAME=" + _path;
+        
+        // Pass the fixed exec_path to SCRIPT_FILENAME
+        std::string env_script = "SCRIPT_FILENAME=" + exec_path;
         std::string env_gateway = "GATEWAY_INTERFACE=CGI/1.1";
         std::string env_protocol = "SERVER_PROTOCOL=HTTP/1.1";
         std::string env_redirect = "REDIRECT_STATUS=200";
@@ -108,13 +108,13 @@ int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
             (char *)env_protocol.c_str(), (char *)env_redirect.c_str(), NULL
         };
 
-        const char *args[] = { script.c_str(), _path.c_str(), NULL };
+        // Pass the fixed exec_path to python/php
+        const char *args[] = { script.c_str(), exec_path.c_str(), NULL };
         execve(script.c_str(), (char * const *)args, env);
         
         std::cerr << "[CGI-CHILD] execve failed: " << strerror(errno) << std::endl;
         exit(127);
     }
-
     // --- PARENT PROCESS ---
     close(pipe_out[1]);
 

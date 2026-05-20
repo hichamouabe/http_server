@@ -4,6 +4,7 @@ Client::Client()
 	: fd(-1),
 	listen_fd(-1),
 	state(READ_REQUEST_LINE),
+	is_chunked(false),
 	content_length(0),
 	error_code(0),
 	file_size(0),
@@ -16,6 +17,7 @@ Client::Client(int fd)
 	: fd(fd),
 	listen_fd(-1),
 	state(READ_REQUEST_LINE),
+	is_chunked(false),
 	content_length(0),
 	error_code(0),
 	file_size(0),
@@ -34,6 +36,7 @@ void	Client::reset() {
 	recv_buf.clear();
 	send_buf.clear();
 	state	= READ_REQUEST_LINE;
+	is_chunked = false;
 	method.clear();
 	path.clear();
 	version.clear();
@@ -129,5 +132,6 @@ int Client::getTimeoutForState() const {
 		default:                  return 30;
 	}
 }
-
+void Client::setIsChunked(bool c) { is_chunked = c; }
+bool Client::getIsChunked() const { return is_chunked; }
 /////////////////////////////////////////////////////////end
