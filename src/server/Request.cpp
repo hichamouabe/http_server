@@ -270,8 +270,10 @@ void	Server::handleRequest(int fd) {
 		}
 		else if (c.getState() == PROCESS_REQUEST) {
 			buildResponse(c);
-			c.setState(WRITE_RESPONSE);
-			modifyEpoll(fd, EPOLLOUT);
+			if (c.getState() != PROCESS_CGI) {
+				c.setState(WRITE_RESPONSE);
+				modifyEpoll(fd, EPOLLOUT);
+			}
 			break;
 		}
 		else { break; }

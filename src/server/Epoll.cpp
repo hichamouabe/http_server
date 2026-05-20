@@ -1,5 +1,6 @@
 #include "Server.hpp"
-
+#include <sys/wait.h>
+#include <signal.h>
 // adding fd to epoll for read event (EPOLLIN)
 
 void	Server::addToEpoll(int fd) {
@@ -65,27 +66,50 @@ void Server::eventLoop() {
                 if (c.getState() == CLOSED)
                     disconnect(fd);
             }
-        }	// ========== 2. TIMEOUT SWEEP (runs every 1 second) ==========
+        }
+	// ========== 2. TIMEOUT SWEEP (runs every 1 second) ==========
 		time_t now = std::time(NULL);
 
-		// Only run the O(N) map sweep once per second
 		if (now - last_timeout_sweep >= 1) {
-			std::vector<int> dead_clients;  // Store FDs to kill
+			std::vector<int> dead_clients;
 
 			for (std::map<int, Client*>::iterator it = clients.begin(); it != clients.end(); ++it) {
 				Client* c = it->second;
 				int limit = c->getTimeoutForState();
 
 				if (c->isInactiveFor(limit)) {
-					std::cout << "[TIMEOUT] fd=" << it->first
-					          << " state=" << c->getState()
-					          << " inactive for " << (now - c->getLastActivityTime())
-					          << "s (limit=" << limit << "s)" << std::endl;
-					dead_clients.push_back(it->first);
+					// --- NEW CGI GRACEFUL TIMEOUT ---
+					if (c->getState() == PROCESS_CGI) {
+						std::cout << "[TIMEOUT] CGI PID " << c->cgi_pid << " hung! Sending 504." << std::endl;
+						
+						// 1. Kill the stuck CGI script
+						kill(c->cgi_pid, SIGKILL);
+						waitpid(c->cgi_pid, NULL, 0);
+						
+						// 2. Clean up the pipe
+						epoll_ctl(epfd, EPOLL_CTL_DEL, c->cgi_fd, NULL);
+						close(c->cgi_fd);
+						cgi_clients.erase(c->cgi_fd);
+						
+						c->cgi_fd = -1;
+						c->cgi_pid = -1;
+
+						// 3. Gracefully send a 504 error page to the client!
+						c->setErrorCode(504);
+						c->setState(PROCESS_REQUEST);
+						buildResponse(*c);
+						c->setState(WRITE_RESPONSE);
+						modifyEpoll(it->first, EPOLLOUT);
+					} 
+					// --- NORMAL CLIENT TIMEOUT ---
+					else {
+						std::cout << "[TIMEOUT] fd=" << it->first << " inactive. Disconnecting." << std::endl;
+						dead_clients.push_back(it->first);
+					}
 				}
 			}
 
-			// Safely disconnect after the loop
+			// Safely disconnect completely dead clients after the loop
 			for (size_t i = 0; i < dead_clients.size(); ++i) {
 				disconnect(dead_clients[i]);
 			}

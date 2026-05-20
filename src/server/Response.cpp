@@ -371,7 +371,7 @@ void Server::buildResponse(Client& c) {
                 cgi.setBody(c.getBody());
                 cgi.setContentType(c.getHeader().count("Content-Type") ? c.getHeader()["Content-Type"] : "");
                 cgi.setHost(c.getHeader().count("Host") ? c.getHeader()["Host"] : "localhost");
-
+		cgi.setHeaders(c.getHeader());
                 pid_t pid = -1;
                 int pipe_fd = cgi.executeAsync(interpreter, pid);
 
