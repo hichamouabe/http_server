@@ -327,7 +327,6 @@ void Server::buildResponse(Client& c) {
     std::cout << std::endl;
 
     // ⭐ Check if this is a misdirected request (no match + all servers have explicit names)
-    // If matched=false AND selected server has server_names = MISDIRECTED
     if (!matched && !srv.server_names.empty()) {
         std::cout << "[VH-ERROR] 421: Hostname '" << host_header << "' not configured!" << std::endl;
         std::string body = "<html><body><h1>421 Misdirected Request</h1>"
@@ -344,7 +343,7 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-// Handle early errors (400, 413, 431, etc)
+    // Handle early errors (400, 413, 431, etc)
     if (c.getErrorCode() != 0) {
         std::string msg = getStatusMsg(c.getErrorCode());
         c.sendBuf() = buildErrorResponse(c.getErrorCode(), msg, srv);
@@ -352,7 +351,21 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    LocationConfig* loc = matchLocation(srv, c.getPath());
+    // =========================================================================
+    // FIX: Extract Query String so we don't try to open "test.py?name=naar"
+    // =========================================================================
+    std::string full_path = c.getPath();
+    std::string uri_path = full_path;
+    std::string query_string = "";
+    
+    size_t q_pos = full_path.find('?');
+    if (q_pos != std::string::npos) {
+        uri_path = full_path.substr(0, q_pos);
+        query_string = full_path.substr(q_pos + 1); // Strip the '?'
+    }
+
+    // Now use uri_path for matching and routing!
+    LocationConfig* loc = matchLocation(srv, uri_path);
 
     // --- 1. REDIRECT ---
     if (loc && loc->return_url.first != 0) {
@@ -388,8 +401,8 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    std::string physical = resolvePath(c.getPath(), loc);
-    std::cout << "[ROUTE] " << c.getMethod() << " " << c.getPath() << " -> " << physical << std::endl;
+    std::string physical = resolvePath(uri_path, loc);
+    std::cout << "[ROUTE] " << c.getMethod() << " " << uri_path << " -> " << physical << std::endl;
 
     // --- 3. CGI HANDLING ---
     if (!loc->cgi_pass.empty()) {
@@ -411,14 +424,11 @@ void Server::buildResponse(Client& c) {
                     return;
                 }
 
-                size_t qmark = c.getPath().find('?');
-                std::string query = (qmark != std::string::npos) ? c.getPath().substr(qmark + 1) : "";
-
-// Setup the CGI parser
+                // Setup the CGI parser using the clean paths
                 CGI cgi;
                 cgi.setMethod(c.getMethod());
                 cgi.setPath(physical);
-                cgi.setQuery(query);
+                cgi.setQuery(query_string); // PASS EXTRACTED QUERY HERE!
                 cgi.setBody(c.getBody());
                 cgi.setContentType(c.getHeader().count("Content-Type") ? c.getHeader()["Content-Type"] : "");
                 cgi.setHost(c.getHeader().count("Host") ? c.getHeader()["Host"] : "localhost");
@@ -432,21 +442,17 @@ void Server::buildResponse(Client& c) {
                     return;
                 }
 
-                // Link the pipe to the client
                 c.cgi_fd = pipe_fd;
                 c.cgi_pid = pid;
                 c.cgi_raw_output.clear();
 
-                // Add the CGI pipe to epoll (for reading)
                 struct epoll_event ev;
                 ev.events = EPOLLIN;
                 ev.data.fd = pipe_fd;
                 epoll_ctl(epfd, EPOLL_CTL_ADD, pipe_fd, &ev);
 
-                // Add to our CGI tracker map
                 cgi_clients[pipe_fd] = &c;
                 
-                // Change state and return! The server keeps running!
                 c.setState(PROCESS_CGI);
                 std::cout << "[CGI] Async process started, PID: " << pid << " on FD: " << pipe_fd << std::endl;
                 return;
@@ -502,7 +508,7 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-// --- 6. GET ---
+    // --- 6. GET ---
     struct stat st;
 
     if (stat(physical.c_str(), &st) != 0) {
@@ -515,10 +521,10 @@ void Server::buildResponse(Client& c) {
     // Directory handling
     if (S_ISDIR(st.st_mode)) {
         // Missing trailing slash -> redirect
-        if (c.getPath()[c.getPath().size()-1] != '/') {
+        if (uri_path[uri_path.size()-1] != '/') {
             std::ostringstream oss;
             oss << "HTTP/1.1 301 " << getStatusMsg(301) << "\r\n"
-                << "Location: " << c.getPath() << "/\r\n"
+                << "Location: " << uri_path << "/\r\n"
                 << "Content-Length: 0\r\n"
                 << "Connection: close\r\n\r\n";
             c.sendBuf() = oss.str();
@@ -526,7 +532,6 @@ void Server::buildResponse(Client& c) {
             return;
         }
 
-        // Try index file
         bool index_found = false;
         if (!loc->index.empty()) {
             std::string index_path = physical;
@@ -536,14 +541,13 @@ void Server::buildResponse(Client& c) {
             if (stat(index_path.c_str(), &ist) == 0 && S_ISREG(ist.st_mode)) {
                 physical = index_path;
                 st = ist;
-                index_found = true; // We found the index, proceed to file serving!
+                index_found = true; 
             }
         }
 
-        // If no index file was found, handle Autoindex or 403
         if (!index_found) {
             if (loc->autoindex) {
-                std::string body = buildAutoindex(c.getPath(), physical);
+                std::string body = buildAutoindex(uri_path, physical);
                 std::ostringstream oss;
                 oss << "HTTP/1.1 200 " << getStatusMsg(200) << "\r\n"
                     << "Server: Webserv/1.0\r\n"
@@ -557,14 +561,12 @@ void Server::buildResponse(Client& c) {
                 return;
             }
 
-            // Directory but no index and no autoindex -> 403
             c.sendBuf() = buildErrorResponse(403, "Forbidden", srv);
             c.setFileSize(c.sendBuf().size());
             return;
         }
     }
 
-    // Regular file serving (Index files fall through to here naturally now)
     if (!S_ISREG(st.st_mode)) {
         c.sendBuf() = buildErrorResponse(404, "Not Found", srv);
         c.setFileSize(c.sendBuf().size());
