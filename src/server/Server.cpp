@@ -2,6 +2,8 @@
 #include <sstream>
 #include <sys/wait.h>
 #include <signal.h>
+
+
 Server::Server() {
 	epfd = epoll_create1(0);
 	loadMimeTypes("conf/mime.types");
@@ -32,30 +34,26 @@ void Server::setSocketTimeout(int fd) {
 
 void	Server::setup(const std::vector<ServerConfig>& configs) {
 	_configs = configs;
-	std::map<std::string, int> default_servers;  // ← ADD THIS
-    
-    // ← ADD THIS VALIDATION BLOCK
-for (size_t i = 0; i < _configs.size(); i++) {
-    if (_configs[i].server_names.empty()) {
-        // Loop through each listen socket for this config
-        for (size_t j = 0; j < _configs[i].listen_sockets.size(); j++) {
-            int port = _configs[i].listen_sockets[j].second;
-            
-            // Convert port to string without to_string
-            std::ostringstream oss;
-            oss << port;
-            std::string port_key = oss.str();
-            
-            default_servers[port_key]++;
-            
-            if (default_servers[port_key] > 1) {
-                throw std::runtime_error(
-                    "Error: Multiple server blocks without server_name on port " + port_key
-                );
-            }
-        }
-    }
-}
+	std::map<std::string, int> default_servers;      
+	for (size_t i = 0; i < _configs.size(); i++) {
+	    if (_configs[i].server_names.empty()) {
+	        for (size_t j = 0; j < _configs[i].listen_sockets.size(); j++) {
+	            int port = _configs[i].listen_sockets[j].second;
+	            
+	            std::ostringstream oss;
+	            oss << port;
+	            std::string port_key = oss.str();
+	            
+	            default_servers[port_key]++;
+	            
+	            if (default_servers[port_key] > 1) {
+	                throw std::runtime_error(
+	                    "Error: Multiple server blocks without server_name on port " + port_key
+	                );
+	            }
+	        }
+	    }
+	}
 	std::map<std::string, int> bound;
 
 	for (size_t i = 0; i < _configs.size(); i++) {
@@ -76,7 +74,6 @@ for (size_t i = 0; i < _configs.size(); i++) {
 			}
 			int lfd = bound[key];
 
-			// ✅ CHANGED: Store ALL configs for this listening fd
 			_fd_to_configs[lfd].push_back(i);
 		}
 	}
@@ -94,7 +91,7 @@ void	Server::acceptClients(int listen_fd) {
 		addToEpoll(clientfd);
 		Client* cl = new Client(clientfd);
 		cl->setListenFd(listen_fd);
-		cl->updateActivityTime();  // ← ADD THIS LINE
+		cl->updateActivityTime();  
 		clients.insert(std::make_pair(clientfd, cl));
 		std::cout << "[ACCEPT] client fd=" << clientfd << std::endl;
 	}
@@ -103,18 +100,16 @@ void	Server::acceptClients(int listen_fd) {
 void Server::disconnect(int fd) {
     Client* c = clients[fd];
     
-    // --- NEW CGI CLEANUP ---
     if (c->cgi_pid > 0) {
         std::cout << "[CGI] Killing stuck/abandoned CGI process PID=" << c->cgi_pid << std::endl;
         kill(c->cgi_pid, SIGKILL);
-        waitpid(c->cgi_pid, NULL, 0); // Prevent zombie process
+        waitpid(c->cgi_pid, NULL, 0); 
     }
     if (c->cgi_fd > 0) {
         epoll_ctl(epfd, EPOLL_CTL_DEL, c->cgi_fd, NULL);
         close(c->cgi_fd);
-        cgi_clients.erase(c->cgi_fd); // Remove from CGI map
+        cgi_clients.erase(c->cgi_fd); 
     }
-    // -----------------------
 
     epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
     close(fd);

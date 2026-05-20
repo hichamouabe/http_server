@@ -2,7 +2,6 @@
 #include <sstream>
 
 
-// make a fd non-blocking 
 void	Server::setNonBlocking(int fd) {
 	int flags = fcntl(fd, F_GETFL, 0);
 	if (flags == -1)
@@ -11,7 +10,6 @@ void	Server::setNonBlocking(int fd) {
 		throw std::runtime_error("fcntl F_SETFL failed");
 }
 
-// creates a tcp socket , bind it to host:port and start listening
 
 int	Server::createListenSocket(const std::string& host, int port) {
 	struct	addrinfo hints;
