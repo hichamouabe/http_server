@@ -72,11 +72,14 @@ std::string Server::getMimeType(const std::string& path) {
     size_t slash = path.rfind('/');
     size_t dot = path.rfind('.');
     
+    // Ensure the dot is actually part of the filename, not a directory name
+    // e.g., /my.folder/file -> no extension
     if (dot == std::string::npos || (slash != std::string::npos && dot < slash))
         return "application/octet-stream";
     
     std::string ext = path.substr(dot);
     
+    // Lowercase the extension for safe lookup (e.g., .JPG -> .jpg)
     for (size_t i = 0; i < ext.size(); i++) {
         if (ext[i] >= 'A' && ext[i] <= 'Z')
             ext[i] = ext[i] - 'A' + 'a';
@@ -156,6 +159,7 @@ static bool saveUpload(Client& c, LocationConfig* loc) {
     std::string filename;
     std::map<std::string, std::string> hdrs = c.getHeader();
     
+    // Look for filename in headers (Raw binary upload)
     if (hdrs.count("Content-Disposition")) {
         std::string cd = hdrs["Content-Disposition"];
         size_t fn = cd.find("filename=\"");
@@ -167,12 +171,14 @@ static bool saveUpload(Client& c, LocationConfig* loc) {
         }
     }
 
+    // Fallback if no filename is found
     if (filename.empty()) {
         std::ostringstream ss;
         ss << "upload_" << (size_t)time(NULL) << ".bin";
         filename = ss.str();
     }
 
+    // Resolve where to save the file
     std::string store = loc->upload_store;
     if (store.empty()) store = ".";
     if (store[store.size()-1] != '/') store += "/";
@@ -227,11 +233,17 @@ bool Server::selectServerByHostname(
     }
 
     const std::vector<int>& config_indices = it->second;
+    std::cout << "[DEBUG-VH-3] Found " << config_indices.size() << " configs for this listen_fd" << std::endl;
+
+    // Extract hostname from "Host: example.com:8080"
     std::string requested_hostname = host_header;
     size_t colon = requested_hostname.find(':');
     if (colon != std::string::npos)
         requested_hostname = requested_hostname.substr(0, colon);
 
+    std::cout << "[DEBUG-VH-4] Requested hostname (without port): '" << requested_hostname << "'" << std::endl;
+
+    // Check if ANY config has empty server_names (catch-all)
     bool has_catch_all = false;
     int catch_all_idx = -1;
     for (size_t i = 0; i < config_indices.size(); i++) {
@@ -239,42 +251,84 @@ bool Server::selectServerByHostname(
         if (srv.server_names.empty()) {
             has_catch_all = true;
             catch_all_idx = i;
+            std::cout << "[DEBUG-VH-4b] Found catch-all (no server_name) at config index " << i << std::endl;
             break;
         }
     }
 
+    // Print all configs and their server_names
+    for (size_t i = 0; i < config_indices.size(); i++) {
+        int config_idx = config_indices[i];
+        ServerConfig& srv = _configs[config_idx];
+        std::cout << "[DEBUG-VH-5] Config " << i << " (index=" << config_idx << ") has " 
+                  << srv.server_names.size() << " server_name(s): ";
+        for (size_t j = 0; j < srv.server_names.size(); j++) {
+            std::cout << "'" << srv.server_names[j] << "' ";
+        }
+        std::cout << std::endl;
+    }
+
+    // Step 1: Try exact hostname match
+    std::cout << "[DEBUG-VH-6] Step 1: Looking for exact hostname match..." << std::endl;
     for (size_t i = 0; i < config_indices.size(); i++) {
         int config_idx = config_indices[i];
         ServerConfig& srv = _configs[config_idx];
         
         for (size_t j = 0; j < srv.server_names.size(); j++) {
-            if (srv.server_names[j] == requested_hostname || srv.server_names[j] == "*") {
+            std::cout << "[DEBUG-VH-7] Checking if '" << srv.server_names[j] 
+                      << "' == '" << requested_hostname << "'" << std::endl;
+            
+            if (srv.server_names[j] == requested_hostname) {
+                std::cout << "[DEBUG-VH-8] ✓ EXACT MATCH FOUND at config " << config_idx << std::endl;
+                selected_config = &srv;
+                return true;
+            }
+            
+            if (srv.server_names[j] == "*") {
+                std::cout << "[DEBUG-VH-9] ✓ WILDCARD MATCH FOUND at config " << config_idx << std::endl;
                 selected_config = &srv;
                 return true;
             }
         }
     }
 
+    // Step 2: If no exact match, check if there's a catch-all server
     if (has_catch_all) {
+        std::cout << "[DEBUG-VH-11] No exact match, but catch-all exists. Using catch-all config." << std::endl;
         selected_config = &_configs[config_indices[catch_all_idx]];
         return false;
     }
 
-    selected_config = &_configs[config_indices[0]];  
-    return false;  
+    // Step 3: No exact match AND no catch-all = MISDIRECTED REQUEST
+    std::cout << "[DEBUG-VH-12] ✗ NO MATCH and NO CATCH-ALL! This is a 421 error." << std::endl;
+    selected_config = &_configs[config_indices[0]];  // Set to something valid, but we'll reject in buildResponse
+    return false;  // Return false to signal error
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // BUILD RESPONSE (main handler)
 // ═══════════════════════════════════════════════════════════════════
 void Server::buildResponse(Client& c) {
+    std::cout << "\n╔════════════════════════════════════════════════════════════════╗" << std::endl;
+    std::cout << "║ BUILD RESPONSE - Virtual Hosting Debug" << std::endl;
+    std::cout << "╚════════════════════════════════════════════════════════════════╝" << std::endl;
+    
+    // Select server by hostname
     ServerConfig* srv_ptr = NULL;
     std::string host_header = c.getHeader()["Host"];
+    std::cout << "[VH-START] Host header: '" << host_header << "'" << std::endl;
     
     bool matched = selectServerByHostname(c.getListenFd(), host_header, srv_ptr);
     ServerConfig& srv = *srv_ptr;
     
+    std::cout << "[VH-RESULT] Server names in selected config: ";
+    for (size_t i = 0; i < srv.server_names.size(); i++)
+        std::cout << "'" << srv.server_names[i] << "' ";
+    std::cout << std::endl;
+
+    // ⭐ Check if this is a misdirected request (no match + all servers have explicit names)
     if (!matched && !srv.server_names.empty()) {
+        std::cout << "[VH-ERROR] 421: Hostname '" << host_header << "' not configured!" << std::endl;
         std::string body = "<html><body><h1>421 Misdirected Request</h1>"
                            "<p>Hostname '" + host_header + "' not configured on this server</p></body></html>";
         std::ostringstream oss;
@@ -289,6 +343,7 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
+    // Handle early errors (400, 413, 431, etc)
     if (c.getErrorCode() != 0) {
         std::string msg = getStatusMsg(c.getErrorCode());
         c.sendBuf() = buildErrorResponse(c.getErrorCode(), msg, srv);
@@ -309,6 +364,7 @@ void Server::buildResponse(Client& c) {
         query_string = full_path.substr(q_pos + 1); // Strip the '?'
     }
 
+    // Now use uri_path for matching and routing!
     LocationConfig* loc = matchLocation(srv, uri_path);
 
     // --- 1. REDIRECT ---
@@ -321,6 +377,7 @@ void Server::buildResponse(Client& c) {
             << "Connection: close\r\n\r\n";
         c.sendBuf() = oss.str();
         c.setFileSize(c.sendBuf().size());
+        std::cout << "[RESPONSE] " << code << " -> " << loc->return_url.second << std::endl;
         return;
     }
 
@@ -332,10 +389,12 @@ void Server::buildResponse(Client& c) {
         if (!allowed) {
             c.sendBuf() = buildErrorResponse(405, "Method Not Allowed", srv);
             c.setFileSize(c.sendBuf().size());
+            std::cout << "[RESPONSE] 405: " << c.getMethod() << " not allowed" << std::endl;
             return;
         }
     }
 
+    // No location or root -> 404
     if (!loc || loc->root.empty()) {
         c.sendBuf() = buildErrorResponse(404, "Not Found", srv);
         c.setFileSize(c.sendBuf().size());
@@ -343,6 +402,7 @@ void Server::buildResponse(Client& c) {
     }
 
     std::string physical = resolvePath(uri_path, loc);
+    std::cout << "[ROUTE] " << c.getMethod() << " " << uri_path << " -> " << physical << std::endl;
 
     // --- 3. CGI HANDLING ---
     if (!loc->cgi_pass.empty()) {
@@ -364,6 +424,7 @@ void Server::buildResponse(Client& c) {
                     return;
                 }
 
+                // Setup the CGI parser using the clean paths
                 CGI cgi;
                 cgi.setMethod(c.getMethod());
                 cgi.setPath(physical);
@@ -413,6 +474,7 @@ void Server::buildResponse(Client& c) {
                 << "Content-Length: 0\r\n"
                 << "Connection: close\r\n\r\n";
             c.sendBuf() = oss.str();
+            std::cout << "[RESPONSE] 204 Deleted: " << physical << std::endl;
         }
         c.setFileSize(c.sendBuf().size());
         return;
@@ -430,6 +492,7 @@ void Server::buildResponse(Client& c) {
                     << "Content-Type: text/html\r\n"
                     << "Connection: close\r\n\r\n" << body;
                 c.sendBuf() = oss.str();
+                std::cout << "[RESPONSE] 201 Created" << std::endl;
             } else {
                 c.sendBuf() = buildErrorResponse(500, "Internal Server Error", srv);
             }
@@ -451,10 +514,13 @@ void Server::buildResponse(Client& c) {
     if (stat(physical.c_str(), &st) != 0) {
         c.sendBuf() = buildErrorResponse(404, "Not Found", srv);
         c.setFileSize(c.sendBuf().size());
+        std::cout << "[RESPONSE] 404: " << physical << std::endl;
         return;
     }
 
+    // Directory handling
     if (S_ISDIR(st.st_mode)) {
+        // Missing trailing slash -> redirect
         if (uri_path[uri_path.size()-1] != '/') {
             std::ostringstream oss;
             oss << "HTTP/1.1 301 " << getStatusMsg(301) << "\r\n"
@@ -491,6 +557,7 @@ void Server::buildResponse(Client& c) {
                     << body;
                 c.sendBuf() = oss.str();
                 c.setFileSize(c.sendBuf().size());
+                std::cout << "[RESPONSE] 200 Autoindex" << std::endl;
                 return;
             }
 
@@ -523,6 +590,7 @@ void Server::buildResponse(Client& c) {
             << "Connection: " << (c.isKeepAlive() ? "keep-alive" : "close") << "\r\n\r\n";
         c.sendBuf() = oss.str();
     }
+    std::cout << "[RESPONSE] 200 OK: " << physical << std::endl;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -532,6 +600,7 @@ void Server::handleResponse(int fd) {
     Client& c = *clients[fd];
     char chunk[8192];
 
+    // Phase 1: send headers (and full body for non-file responses)
     if (!c.headerSent()) {
         ssize_t n = send(fd, c.sendBuf().c_str(), c.sendBuf().size(), 0);
 	if (n > 0) {
@@ -545,6 +614,7 @@ void Server::handleResponse(int fd) {
         if (!c.headerSent()) return;
     }
 
+    // Phase 2: stream file body (only for real file responses)
     if (c.file_stream.is_open()) {
         if (c.getBytesSent() < c.getFileSize()) {
             c.file_stream.clear();
@@ -553,18 +623,18 @@ void Server::handleResponse(int fd) {
             std::streamsize actual = c.readFile(chunk, sizeof(chunk));
             if (actual <= 0) { c.setState(CLOSED); return; }
 
-            // FIX: Removed the errno check trap here!
             ssize_t n = send(fd, chunk, static_cast<size_t>(actual), 0);
-            if (n < 0) {
+            if (n == -1) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) return;
                 c.setState(CLOSED);
                 return;
             }
-            
             if (n > 0) c.setBytesSent(static_cast<size_t>(n));
             return;
         }
     }
 
+    // Phase 3: done
     bool file_done = !c.file_stream.is_open() ||
                      (c.getBytesSent() >= c.getFileSize());
 
@@ -590,20 +660,24 @@ void Server::handleCGIRead(int pipe_fd) {
     ssize_t n = read(pipe_fd, buf, sizeof(buf));
 
     if (n > 0) {
+        // We read some data, append it to the client's buffer
         c->cgi_raw_output.append(buf, n);
-        c->updateActivityTime(); 
+        c->updateActivityTime(); // Keep the client from timing out
     }
     else if (n == 0) {
+        // EOF: The script has finished writing and closed the pipe!
         std::cout << "[CGI] Process PID " << c->cgi_pid << " finished writing." << std::endl;
 
+        // 1. Cleanup the pipe and process
         epoll_ctl(epfd, EPOLL_CTL_DEL, pipe_fd, NULL);
         close(pipe_fd);
         cgi_clients.erase(pipe_fd);
-        waitpid(c->cgi_pid, NULL, 0); 
+        waitpid(c->cgi_pid, NULL, 0); // Clean up the zombie process
 
         c->cgi_fd = -1;
         c->cgi_pid = -1;
 
+        // 2. Parse the output we collected
         CGI cgi_parser;
         cgi_parser.parseOutput(c->cgi_raw_output);
 
@@ -611,6 +685,7 @@ void Server::handleCGIRead(int pipe_fd) {
         std::string body = cgi_parser.getBody();
         std::string headers = cgi_parser.getHeaders();
 
+        // 3. Build the final HTTP response
         std::ostringstream oss;
         oss << "HTTP/1.1 " << status << " " << getStatusMsg(status) << "\r\n"
             << "Server: Webserv/1.0\r\n"
@@ -625,7 +700,9 @@ void Server::handleCGIRead(int pipe_fd) {
         c->sendBuf() = oss.str();
         c->setFileSize(c->sendBuf().size());
 
+        // 4. Switch client to WRITE_RESPONSE and wake up the client socket
         c->setState(WRITE_RESPONSE);
         modifyEpoll(c->getFd(), EPOLLOUT);
     }
+    // If n == -1 and errno == EAGAIN, we just do nothing and wait for next epoll trigger
 }
