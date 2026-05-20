@@ -601,16 +601,14 @@ void Server::handleResponse(int fd) {
     // Phase 1: send headers (and full body for non-file responses)
     if (!c.headerSent()) {
         ssize_t n = send(fd, c.sendBuf().c_str(), c.sendBuf().size(), 0);
-        if (n > 0) {
-            c.sendBuf().erase(0, n);
-            if (c.sendBuf().empty())
-                c.setHeaderSent(true);
-        } else if (n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            return;
-        } else {
-            c.setState(CLOSED);
-            return;
-        }
+	if (n > 0) {
+		c.sendBuf().erase(0, n);
+		if (c.sendBuf().empty())
+			c.setHeaderSent(true);
+	} else if (n < 0) {
+		c.setState(CLOSED);
+		return;
+	}
         if (!c.headerSent()) return;
     }
 

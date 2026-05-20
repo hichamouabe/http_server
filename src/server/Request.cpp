@@ -112,11 +112,9 @@ static void parseHeaders(Client& c) {
 void	Server::handleRequest(int fd) {
 	Client& c = *clients[fd];
 	char buf[4069];
-
 	ssize_t n = recv(fd, buf, sizeof(buf), 0);
 	if (n <= 0) {
-		if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK))
-			c.setState(CLOSED);
+		c.setState(CLOSED);
 		return ;
 	}
 	c.recvBuf().append(buf, n);
