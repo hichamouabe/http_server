@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>webserv — testbench</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&family=Syne:wght@400;700;800&display=swap');
+
+:root {
+  --bg:       #0d0e11;
+  --bg2:      #13151a;
+  --bg3:      #1a1d24;
+  --border:   #252830;
+  --border2:  #2e3240;
+  --text:     #c8cdd8;
+  --muted:    #5a6075;
+  --dim:      #383d4f;
+  --green:    #3ecf79;
+  --green-bg: #0d1f16;
+  --amber:    #e8a829;
+  --amber-bg: #1c1508;
+  --red:      #e05454;
+  --red-bg:   #1c0a0a;
+  --blue:     #5b9cf6;
+  --blue-bg:  #0a1220;
+  --purple:   #a78bfa;
+  --purple-bg:#120e1e;
+  --cyan:     #22d3ee;
+  --white:    #eef0f5;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ── layout ── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(13,14,17,0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0 2rem;
+  height: 52px;
+}
+.logo {
+  font-family: 'Syne', sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--white);
+  letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.base-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  max-width: 360px;
+}
+.base-label { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.base-input {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  color: var(--white);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  padding: 5px 10px;
+  width: 220px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.base-input:focus { border-color: var(--blue); }
+
+.conn-badge {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+.conn-dot.ok { background: var(--green); }
+.conn-dot.err { background: var(--red); }
+
+.layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: calc(100vh - 52px);
+}
+
+/* ── sidebar ── */
+.sidebar {
+  border-right: 1px solid var(--border);
+  padding: 1.5rem 0;
+  position: sticky;
+  top: 52px;
+  height: calc(100vh - 52px);
+  overflow-y: auto;
+}
+.nav-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  padding: 0 1.5rem;
+  margin-bottom: 6px;
+  margin-top: 1.2rem;
+}
+.nav-group-label:first-child { margin-top: 0; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 1.5rem;
+  cursor: pointer;
+  color: var(--muted);
+  text-decoration: none;
+  transition: all 0.12s;
+  font-size: 12px;
+}
+.nav-item:hover { color: var(--text); background: var(--bg2); }
+.nav-item.active { color: var(--white); background: var(--bg3); border-right: 2px solid var(--blue); }
+.nav-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  margin-left: auto;
+}
+.c-2xx { background: var(--green-bg); color: var(--green); }
+.c-3xx { background: var(--blue-bg); color: var(--blue); }
+.c-4xx { background: var(--amber-bg); color: var(--amber); }
+.c-5xx { background: var(--red-bg); color: var(--red); }
+
+/* ── main content ── */
+.main { padding: 2rem 2.5rem; max-width: 900px; }
+
+.section {
+  margin-bottom: 3rem;
+  scroll-margin-top: 72px;
+}
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 1.2rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+.section-code {
+  font-family: 'Syne', sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -1px;
+}
+.section-name {
+  font-family: 'Syne', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--white);
+}
+.section-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* ── cards ── */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.card-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+.card-panel {
+  padding: 1.2rem;
+}
+.card-panel + .card-panel {
+  border-left: 1px solid var(--border);
+}
+.panel-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  color: var(--dim);
+  margin-bottom: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.panel-label svg { opacity: 0.5; }
+
+/* ── curl display ── */
+.curl-block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
+  position: relative;
+}
+.curl-cmd { color: var(--green); }
+.curl-flag { color: var(--amber); }
+.curl-str { color: var(--cyan); }
+.curl-url { color: var(--purple); }
+.copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.copy-btn:hover { color: var(--white); border-color: var(--blue); }
+
+/* ── form elements ── */
+.field {
+  margin-bottom: 10px;
+}
+.field label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.field input[type="text"],
+.field input[type="file"],
+.field textarea {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  color: var(--white);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.field input:focus, .field textarea:focus { border-color: var(--blue); }
+.field textarea { resize: vertical; min-height: 60px; }
+
+input[type="file"] { cursor: pointer; color: var(--muted); }
+input[type="file"]::-webkit-file-upload-button {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  cursor: pointer;
+  transition: all 0.13s;
+  text-decoration: none;
+}
+.btn:active { transform: scale(0.98); }
+.btn-primary {
+  background: var(--blue-bg);
+  color: var(--blue);
+  border-color: rgba(91,156,246,0.3);
+}
+.btn-primary:hover { background: rgba(91,156,246,0.15); border-color: var(--blue); color: var(--white); }
+.btn-danger {
+  background: var(--red-bg);
+  color: var(--red);
+  border-color: rgba(224,84,84,0.3);
+}
+.btn-danger:hover { background: rgba(224,84,84,0.15); border-color: var(--red); color: var(--white); }
+.btn-neutral {
+  background: var(--bg3);
+  color: var(--muted);
+}
+.btn-neutral:hover { color: var(--white); border-color: var(--border2); }
+.btn-amber {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border-color: rgba(232,168,41,0.3);
+}
+.btn-amber:hover { border-color: var(--amber); color: var(--white); }
+.btn-green {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: rgba(62,207,121,0.3);
+}
+.btn-green:hover { border-color: var(--green); color: var(--white); }
+
+.btn[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+/* ── response display ── */
+.resp-box {
+  margin-top: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border2);
+  display: none;
+}
+.resp-box.visible { display: block; }
+.resp-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.resp-body {
+  background: var(--bg);
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.7;
+}
+
+/* ── uploaded files list ── */
+.file-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+}
+.file-icon { color: var(--blue); font-size: 14px; }
+.file-name { flex: 1; color: var(--white); }
+.file-size { color: var(--muted); font-size: 11px; }
+
+/* ── link test ── */
+.link-test {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--blue);
+  text-decoration: none;
+  padding: 6px 0;
+}
+.link-test:hover { text-decoration: underline; color: var(--white); }
+
+/* ── note ── */
+.note {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--bg3);
+  border-left: 2px solid var(--border2);
+  border-radius: 0 4px 4px 0;
+  line-height: 1.6;
+}
+.note b { color: var(--text); font-weight: 500; }
+
+/* ── terminal-only ── */
+.terminal-only {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--amber);
+  padding: 6px 0;
+}
+
+/* ── spinner ── */
+.spin {
+  display: inline-block;
+  width: 11px; height: 11px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── section 200 special ── */
+.alive-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  background: var(--green-bg);
+  border: 1px solid rgba(62,207,121,0.25);
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+.alive-code { font-family:'Syne',sans-serif; font-size:32px; font-weight:800; color:var(--green); }
+.alive-text { color: var(--green); font-size:13px; }
+.alive-sub  { color: rgba(62,207,121,0.5); font-size:11px; }
+
+/* ── method badge ── */
+.method {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+.m-get    { background: var(--green-bg); color: var(--green); }
+.m-post   { background: var(--blue-bg); color: var(--blue); }
+.m-delete { background: var(--red-bg); color: var(--red); }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ── TOP BAR ── -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-dot" id="logoDot"></div>
+    webserv
+  </div>
+  <div class="base-input-wrap">
+    <span class="base-label">host</span>
+    <input class="base-input" id="baseUrl" value="http://localhost:8080" />
+  </div>
+  <div class="base-input-wrap">
+    <span class="base-label">server_name</span>
+    <input class="base-input" id="serverName" value="localhost" placeholder="from your config" style="width:130px"
+      onkeydown="if(event.key==='Enter')applyServerName()" />
+    <button onclick="applyServerName()" id="applyBtn" style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;padding:5px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;background:#0a1220;color:#5b9cf6;border:1px solid rgba(91,156,246,0.4);transition:all 0.13s;">apply ↵</button>
+  </div>
+  <div class="conn-badge">
+    <div class="conn-dot" id="connDot"></div>
+    <span id="connText">checking…</span>
+  </div>
+</div>
+
+<div class="layout">
+
+<!-- ── SIDEBAR ── -->
+<nav class="sidebar">
+  <div class="nav-group-label">2xx success</div>
+  <a class="nav-item active" href="#s200" onclick="setActive(this)">
+    <span>GET /</span><span class="nav-badge c-2xx">200</span>
+  </a>
+  <a class="nav-item" href="#s201" onclick="setActive(this)">
+    <span>POST /upload</span><span class="nav-badge c-2xx">201</span>
+  </a>
+  <a class="nav-item" href="#s204" onclick="setActive(this)">
+    <span>DELETE /upload/:file</span><span class="nav-badge c-2xx">204</span>
+  </a>
+
+  <div class="nav-group-label">3xx redirect</div>
+  <a class="nav-item" href="#s301" onclick="setActive(this)">
+    <span>GET /redirect</span><span class="nav-badge c-3xx">301</span>
+  </a>
+
+  <div class="nav-group-label">4xx client error</div>
+  <a class="nav-item" href="#s403" onclick="setActive(this)">
+    <span>GET /forbidden/</span><span class="nav-badge c-4xx">403</span>
+  </a>
+  <a class="nav-item" href="#s404" onclick="setActive(this)">
+    <span>GET /does_not_exist</span><span class="nav-badge c-4xx">404</span>
+  </a>
+  <a class="nav-item" href="#s405" onclick="setActive(this)">
+    <span>POST /</span><span class="nav-badge c-4xx">405</span>
+  </a>
+  <a class="nav-item" href="#s413" onclick="setActive(this)">
+    <span>POST /small</span><span class="nav-badge c-4xx">413</span>
+  </a>
+  <a class="nav-item" href="#s431" onclick="setActive(this)">
+    <span>huge header</span><span class="nav-badge c-4xx">431</span>
+  </a>
+
+  <div class="nav-group-label">5xx server error</div>
+  <a class="nav-item" href="#s500" onclick="setActive(this)">
+    <span>POST /bad_upload</span><span class="nav-badge c-5xx">500</span>
+  </a>
+  <a class="nav-item" href="#s504" onclick="setActive(this)">
+    <span>GET /cgi/timeout.py</span><span class="nav-badge c-5xx">504</span>
+  </a>
+</nav>
+
+<!-- ── MAIN ── -->
+<main class="main">
+
+<!-- 200 -->
+<section class="section" id="s200">
+  <div class="section-header">
+    <span class="section-code c-2xx" style="color:var(--green)">200</span>
+    <div>
+      <div class="section-name">OK — standard GET</div>
+      <div class="section-desc">Visiting this page IS the test. The browser issued GET / to load it.</div>
+    </div>
+    <span class="method m-get" style="margin-left:auto">GET</span>
+  </div>
+
+  <div class="note" style="border-left-color:rgba(232,168,41,0.5);margin-bottom:12px">
+    <b>server_name</b> — changes the <b>-H "Host: …"</b> in every curl command. Hit <b>apply ↵</b> after editing it. Browser fetch buttons cannot override the Host header (browsers forbid it) — use the curl commands for Host-sensitive tests.
+  </div>
+  <div class="alive-banner" id="aliveBanner">
+    <div class="alive-code" id="aliveCode">---</div>
+    <div>
+      <div class="alive-text" id="aliveText">Checking server…</div>
+      <div class="alive-sub" id="aliveSub"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:12px">Re-check the connection manually at any time.</p>
+        <button class="btn btn-green" onclick="checkAlive()">
+          <span class="spin" id="aliveSpinner" style="display:none"></span>
+          ↻ re-check GET /
+        </button>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl200"><span class="curl-cmd">curl</span> -i <span class="curl-url" id="u200"></span>/
+<button class="copy-btn" onclick="copyId('curl200')">copy</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 201 -->
+<section class="section" id="s201">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--green)">201</span>
+    <div>
+      <div class="section-name">Created — file upload</div>
+      <div class="section-desc">POST /upload with Content-Disposition header</div>
+    </div>
+    <span class="method m-post" style="margin-left:auto">POST</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <div class="field">
+          <label>filename</label>
+          <input type="text" id="uploadName" value="test.txt" placeholder="test.txt" oninput="_pickedFile=null;document.getElementById('uploadBody').disabled=false;document.getElementById('uploadBody').placeholder='File contents';updateUploadCurl()" />
+        </div>
+        <div class="field">
+          <label>body / file contents</label>
+          <textarea id="uploadBody" oninput="updateUploadCurl()">File contents</textarea>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+          <button class="btn btn-primary" onclick="doUpload()">
+            <span class="spin" id="uploadSpin" style="display:none"></span>
+            ↑ upload file
+          </button>
+          <label class="btn btn-neutral" style="cursor:pointer">
+            📂 pick file
+            <input type="file" id="filePicker" style="display:none" onchange="pickFile(this)" />
+          </label>
+        </div>
+        <div class="resp-box" id="uploadResp"></div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl201"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 204 -->
+<section class="section" id="s204">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--green)">204</span>
+    <div>
+      <div class="section-name">No Content — delete file</div>
+      <div class="section-desc">DELETE /upload/:filename</div>
+    </div>
+    <span class="method m-delete" style="margin-left:auto">DELETE</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <div class="field">
+          <label>filename to delete</label>
+          <input type="text" id="deleteName" value="test.txt" oninput="updateDeleteCurl()" />
+        </div>
+        <button class="btn btn-danger" onclick="doDelete()">
+          <span class="spin" id="deleteSpin" style="display:none"></span>
+          ✕ delete file
+        </button>
+        <div class="note">Upload a file first using the 201 section, then delete it here. The server should return 204 with no response body.</div>
+        <div class="resp-box" id="deleteResp"></div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl204"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 301 -->
+<section class="section" id="s301">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--blue)">301</span>
+    <div>
+      <div class="section-name">Moved Permanently — redirect</div>
+      <div class="section-desc">GET /redirect — tests the return directive</div>
+    </div>
+    <span class="method m-get" style="margin-left:auto">GET</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:12px">
+          Click the link below — the browser will be redirected. Use the fetch button to capture the raw 301 response without following it.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <a class="link-test" id="redirectLink" href="#" target="_blank">→ open /redirect in new tab</a>
+          <button class="btn btn-neutral" onclick="doFetch('/redirect','redirect301',null,'GET',true)">
+            <span class="spin" id="redirect301Spin" style="display:none"></span>
+            fetch (no-follow)
+          </button>
+        </div>
+        <div class="note"><b>curl -i</b> shows the raw Location header without following the redirect.</div>
+        <div class="resp-box" id="redirect301"></div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl301"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 403 -->
+<section class="section" id="s403">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--amber)">403</span>
+    <div>
+      <div class="section-name">Forbidden — autoindex off</div>
+      <div class="section-desc">GET /forbidden/ — no index file, listing disabled</div>
+    </div>
+    <span class="method m-get" style="margin-left:auto">GET</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:12px">
+          Requests a directory where autoindex is off. Should return 403, not a listing or 404.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-amber" onclick="doFetch('/forbidden/','resp403')">
+            <span class="spin" id="resp403Spin" style="display:none"></span>
+            GET /forbidden/
+          </button>
+          <a class="btn btn-neutral" id="forbidden403Link" href="#" target="_blank">open in tab</a>
+        </div>
+        <div class="resp-box" id="resp403"></div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl403"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 404 -->
+<section class="section" id="s404">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--amber)">404</span>
+    <div>
+      <div class="section-name">Not Found</div>
+      <div class="section-desc">GET /does_not_exist.html</div>
+    </div>
+    <span class="method m-get" style="margin-left:auto">GET</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:12px">
+          Requests a file that doesn't exist. Verifies your custom 404 error page is served.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-amber" onclick="doFetch('/does_not_exist.html','resp404')">
+            <span class="spin" id="resp404Spin" style="display:none"></span>
+            GET /does_not_exist.html
+          </button>
+          <a class="btn btn-neutral" id="notfound404Link" href="#" target="_blank">open in tab</a>
+        </div>
+        <div class="resp-box" id="resp404"></div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl404"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 405 -->
+<section class="section" id="s405">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--amber)">405</span>
+    <div>
+      <div class="section-name">Method Not Allowed — POST to /</div>
+      <div class="section-desc">Root location only accepts GET</div>
+    </div>
+    <span class="method m-post" style="margin-left:auto">POST</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:12px">
+          Sends POST to /, which your config only allows GET on. Server must return 405 with an Allow header.
+        </p>
+        <button class="btn btn-amber" onclick="doFetch('/','resp405',null,'POST')">
+          <span class="spin" id="resp405Spin" style="display:none"></span>
+          POST /
+        </button>
+        <div class="resp-box" id="resp405"></div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl405"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 413 -->
+<section class="section" id="s413">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--amber)">413</span>
+    <div>
+      <div class="section-name">Content Too Large — /small limit</div>
+      <div class="section-desc">POST /small with body > 5 bytes</div>
+    </div>
+    <span class="method m-post" style="margin-left:auto">POST</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <div class="field">
+          <label>body to send (must exceed 5 bytes)</label>
+          <textarea id="smallBody" oninput="updateSmallCurl()">This string is much longer than 5 bytes</textarea>
+        </div>
+        <button class="btn btn-amber" onclick="doSmall()">
+          <span class="spin" id="small413Spin" style="display:none"></span>
+          POST /small
+        </button>
+        <div class="note" style="border-left-color:rgba(232,168,41,0.6);margin-bottom:8px"><b>⚠ browser fetch cannot set the Host header</b> — browsers forbid overriding it. The <b>server_name</b> field only affects the curl commands on the right. For browser buttons, your server must accept the Host it naturally receives (e.g. strip the port in your 421 check).</div>
+        <div class="note"><b>client_max_body_size</b> on /small is set to 5 bytes. Anything larger must trigger 413.</div>
+        <div class="resp-box" id="small413"></div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl413"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 431 -->
+<section class="section" id="s431">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--amber)">431</span>
+    <div>
+      <div class="section-name">Request Header Fields Too Large</div>
+      <div class="section-desc">9000-byte header — terminal only</div>
+    </div>
+    <span class="method m-get" style="margin-left:auto">GET</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <div class="terminal-only">
+          ⚠ browsers cap custom header sizes. use curl in your terminal.
+        </div>
+        <div class="note">
+          <b>head -c 9000 &lt; /dev/zero | tr '\0' 'A'</b> generates a 9000-byte string of A's on the fly and injects it as a header. Copy the command on the right and run it in your terminal.
+        </div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl431"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 500 -->
+<section class="section" id="s500">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--red)">500</span>
+    <div>
+      <div class="section-name">Internal Server Error — bad upload path</div>
+      <div class="section-desc">POST /bad_upload/fail.txt — upload dir doesn't exist</div>
+    </div>
+    <span class="method m-post" style="margin-left:auto">POST</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:12px">
+          Sends data to an upload path whose directory doesn't exist on disk. Server fails to write → 500.
+        </p>
+        <button class="btn btn-danger" onclick="doFetch('/bad_upload/fail.txt','resp500','Data','POST')">
+          <span class="spin" id="resp500Spin" style="display:none"></span>
+          POST /bad_upload/fail.txt
+        </button>
+        <div class="resp-box" id="resp500"></div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl500"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 504 -->
+<section class="section" id="s504">
+  <div class="section-header">
+    <span class="section-code" style="color:var(--red)">504</span>
+    <div>
+      <div class="section-name">Gateway Timeout — CGI sleep</div>
+      <div class="section-desc">GET /cgi/timeout.py — script sleeps past epoll timeout</div>
+    </div>
+    <span class="method m-get" style="margin-left:auto">GET</span>
+  </div>
+  <div class="card">
+    <div class="card-row">
+      <div class="card-panel">
+        <div class="panel-label">action</div>
+        <p style="color:var(--muted);font-size:12px;margin-bottom:12px">
+          The CGI script intentionally sleeps past your epoll timeout. The browser will wait — response can take 10–30 s. Be patient.
+        </p>
+        <button class="btn btn-danger" onclick="doFetch('/cgi/timeout.py','resp504',null,'GET',false,30000)">
+          <span class="spin" id="resp504Spin" style="display:none"></span>
+          GET /cgi/timeout.py
+        </button>
+        <div class="note"><b>Warning:</b> this request will hang until the timeout fires. Don't click twice.</div>
+        <div class="resp-box" id="resp504"></div>
+      </div>
+      <div class="card-panel">
+        <div class="panel-label">terminal</div>
+        <div class="curl-block" id="curl504"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+</div><!-- layout -->
+
+<script>
+/* ── base URL & server_name ── */
+function base() { return document.getElementById('baseUrl').value.trim().replace(/\/$/,''); }
+function sname() { return document.getElementById('serverName').value.trim() || 'localhost'; }
+/* Host header injected into every fetch and curl command */
+function hostHeader() { return `Host: ${sname()}`; }
+function curlHost() { return `-H "${hostHeader()}"`; }
+function fetchHeaders(extra) { return Object.assign({ 'Host': sname() }, extra || {}); }
+
+/* ── update all static curl blocks ── */
+function refreshCurls() {
+  const b = base();
+  document.getElementById('u200').textContent = b;
+  document.getElementById('curl200').innerHTML = curlHtml(`curl -i ${b}/`) + copyBtn('curl200');
+  document.getElementById('curl301').innerHTML = curlHtml(`curl -i ${b}/redirect`) + copyBtn('curl301');
+  document.getElementById('curl403').innerHTML = curlHtml(`curl -i ${b}/forbidden/`) + copyBtn('curl403');
+  document.getElementById('curl404').innerHTML = curlHtml(`curl -i ${b}/does_not_exist.html`) + copyBtn('curl404');
+  document.getElementById('curl405').innerHTML = curlHtml(`curl -i -X POST ${b}/`) + copyBtn('curl405');
+  document.getElementById('curl431').innerHTML = curlHtml(`curl -i -H "X-Massive-Header: $(head -c 9000 < /dev/zero | tr '\0' 'A')" ${b}/`) + copyBtn('curl431');
+  document.getElementById('curl500').innerHTML = curlHtml(`curl -i -X POST -d "Data" ${b}/bad_upload/fail.txt`) + copyBtn('curl500');
+  document.getElementById('curl504').innerHTML = curlHtml(`curl -i ${b}/cgi/timeout.py`) + copyBtn('curl504');
+
+  /* links */
+  document.getElementById('redirectLink').href = b + '/redirect';
+  document.getElementById('forbidden403Link').href = b + '/forbidden/';
+  document.getElementById('notfound404Link').href = b + '/does_not_exist.html';
+
+  updateUploadCurl();
+  updateDeleteCurl();
+  updateSmallCurl();
+  checkAlive();
+}
+
+function updateUploadCurl() {
+  const b = base();
+  const name = document.getElementById('uploadName').value || 'test.txt';
+  const body = document.getElementById('uploadBody').value || 'File contents';
+  const safeBody = body.length > 40 ? body.slice(0,40) + '...' : body;
+  document.getElementById('curl201').innerHTML =
+    curlHtml(`curl -i -X POST -H "Content-Disposition: attachment; filename=\"${name}\"" -d "${safeBody}" ${b}/upload`) + copyBtn('curl201');
+}
+function updateDeleteCurl() {
+  const b = base();
+  const name = document.getElementById('deleteName').value || 'test.txt';
+  document.getElementById('curl204').innerHTML =
+    curlHtml(`curl -i -X DELETE ${b}/upload/${name}`) + copyBtn('curl204');
+}
+function updateSmallCurl() {
+  const b = base();
+  const body = document.getElementById('smallBody').value || 'This string is much longer than 5 bytes';
+  const safeBody = body.length > 40 ? body.slice(0,40)+'...' : body;
+  document.getElementById('curl413').innerHTML =
+    curlHtml(`curl -i -X POST -d "${safeBody}" ${b}/small`) + copyBtn('curl413');
+}
+
+/* ── curl syntax highlight ── */
+function curlHtml(cmd) {
+  return cmd
+    .replace(/^(curl)/m, '<span class="curl-cmd">curl</span>')
+    .replace(/( -[iXHd])/g, '<span class="curl-flag">$1</span>')
+    .replace(/"([^"]*)"/g, '"<span class="curl-str">$1</span>"')
+    .replace(/(https?:\/\/[^\s\\<"]+)/g, '<span class="curl-url">$1</span>');
+}
+function copyBtn(id) {
+  return `<button class="copy-btn" onclick="copyId('${id}')">copy</button>`;
+}
+
+/* ── copy ── */
+function copyId(id) {
+  const el = document.getElementById(id);
+  const text = el.innerText.replace('copy','').trim();
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = el.querySelector('.copy-btn');
+    if (btn) { btn.textContent='copied!'; setTimeout(()=>btn.textContent='copy',1500); }
+  });
+}
+
+/* ── connection check ── */
+async function checkAlive() {
+  const dot = document.getElementById('connDot');
+  const txt = document.getElementById('connText');
+  const code = document.getElementById('aliveCode');
+  const atext = document.getElementById('aliveText');
+  const asub = document.getElementById('aliveSub');
+  const banner = document.getElementById('aliveBanner');
+
+  dot.className = 'conn-dot'; txt.textContent = 'checking…';
+  document.getElementById('aliveSpinner').style.display = 'inline-block';
+
+  try {
+    const r = await fetch(base()+'/', { method:'GET', headers: fetchHeaders(), signal: AbortSignal.timeout(5000) });
+    dot.className = 'conn-dot ok';
+    txt.textContent = `HTTP ${r.status}`;
+    code.textContent = r.status;
+    atext.textContent = `${r.statusText || 'OK'} — server is reachable`;
+    asub.textContent = base() + ' → GET /';
+    banner.style.background = 'var(--green-bg)';
+    banner.style.borderColor = 'rgba(62,207,121,0.25)';
+    code.style.color = 'var(--green)';
+    atext.style.color = 'var(--green)';
+  } catch(e) {
+    dot.className = 'conn-dot err';
+    txt.textContent = 'unreachable';
+    code.textContent = 'ERR';
+    atext.textContent = 'Could not reach server — is it running?';
+    asub.textContent = e.message;
+    banner.style.background = 'var(--red-bg)';
+    banner.style.borderColor = 'rgba(224,84,84,0.25)';
+    code.style.color = 'var(--red)';
+    atext.style.color = 'var(--red)';
+  }
+  document.getElementById('aliveSpinner').style.display = 'none';
+}
+
+/* ── generic fetch test ── */
+async function doFetch(path, respId, body=null, method='GET', noFollow=false, timeout=8000) {
+  const spinId = respId + 'Spin';
+  const spin = document.getElementById(spinId);
+  if (spin) spin.style.display = 'inline-block';
+
+  const respBox = document.getElementById(respId);
+  respBox.className = 'resp-box visible';
+  respBox.innerHTML = statusBar('', '<span class="spin"></span> sending…', 'var(--dim)');
+
+  const opts = {
+    method,
+    headers: fetchHeaders(),
+    signal: AbortSignal.timeout(timeout),
+    redirect: noFollow ? 'manual' : 'follow',
+  };
+  if (body) opts.body = body;
+
+  try {
+    const r = await fetch(base() + path, opts);
+    const txt = await r.text().catch(() => '');
+    respBox.innerHTML = statusBar(r.status, `HTTP ${r.status} ${r.statusText}`, statusColor(r.status))
+      + `<div class="resp-body">${headersText(r)}${txt ? '\n\n' + esc(txt.slice(0,600)) : ''}</div>`;
+  } catch(e) {
+    const isCors = e.message.includes('CORS') || e.message.includes('NetworkError') || e.message.includes('Failed to fetch');
+    respBox.innerHTML = statusBar('ERR', isCors ? '⚠ CORS blocked or network error' : '✕ ' + e.message, 'var(--red)')
+      + `<div class="resp-body">${esc(e.message)}\n\nCORS may be blocking this. Add CORS headers to your server or use the curl command.</div>`;
+  }
+  if (spin) spin.style.display = 'none';
+}
+
+/* ── upload ── */
+async function doUpload() {
+  const spin = document.getElementById('uploadSpin');
+  spin.style.display = 'inline-block';
+  const name = document.getElementById('uploadName').value || 'test.txt';
+  const body = document.getElementById('uploadBody').value || 'File contents';
+  const respBox = document.getElementById('uploadResp');
+  respBox.className = 'resp-box visible';
+  respBox.innerHTML = statusBar('','<span class="spin"></span> uploading…','var(--dim)');
+
+  /* use raw File object if picked (binary-safe), else use textarea string */
+  const uploadBody = _pickedFile && _pickedFile.name === name ? _pickedFile : body;
+
+  try {
+    const r = await fetch(base()+'/upload', {
+      method: 'POST',
+      headers: fetchHeaders({ 'Content-Disposition': `attachment; filename="${name}"` }),
+      body: uploadBody,
+      signal: AbortSignal.timeout(30000),
+    });
+    const txt = await r.text().catch(()=>'');
+    respBox.innerHTML = statusBar(r.status, `HTTP ${r.status} ${r.statusText}`, statusColor(r.status))
+      + `<div class="resp-body">${headersText(r)}${txt ? '\n\n'+esc(txt.slice(0,400)) : ''}</div>`;
+    /* prefill delete field */
+    document.getElementById('deleteName').value = name;
+    updateDeleteCurl();
+  } catch(e) {
+    respBox.innerHTML = statusBar('ERR','✕ '+e.message,'var(--red)')
+      + `<div class="resp-body">${esc(e.message)}</div>`;
+  }
+  spin.style.display = 'none';
+}
+
+/* ── file picker ── */
+let _pickedFile = null;  // raw File object for binary-safe upload
+
+function pickFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  _pickedFile = file;
+  document.getElementById('uploadName').value = file.name;
+  const isBinary = !file.type.startsWith('text/') && file.type !== '';
+  const bodyField = document.getElementById('uploadBody');
+  if (isBinary) {
+    bodyField.value = '';
+    bodyField.placeholder = `[binary file: ${file.name} — ${(file.size/1024).toFixed(1)} KB, sent as raw bytes]`;
+    bodyField.disabled = true;
+  } else {
+    bodyField.disabled = false;
+    bodyField.placeholder = 'File contents';
+    const reader = new FileReader();
+    reader.onload = e => { bodyField.value = e.target.result; };
+    reader.readAsText(file);
+  }
+  updateUploadCurl();
+}
+
+/* ── delete ── */
+async function doDelete() {
+  const spin = document.getElementById('deleteSpin');
+  spin.style.display = 'inline-block';
+  const name = document.getElementById('deleteName').value || 'test.txt';
+  const respBox = document.getElementById('deleteResp');
+  respBox.className = 'resp-box visible';
+  respBox.innerHTML = statusBar('','<span class="spin"></span> deleting…','var(--dim)');
+
+  try {
+    const r = await fetch(base()+'/upload/'+name, {
+      method: 'DELETE',
+      headers: fetchHeaders(),
+      signal: AbortSignal.timeout(8000),
+    });
+    const txt = await r.text().catch(()=>'');
+    respBox.innerHTML = statusBar(r.status, `HTTP ${r.status} ${r.statusText}`, statusColor(r.status))
+      + `<div class="resp-body">${headersText(r)}${txt ? '\n\n'+esc(txt.slice(0,400)) : '(empty body — correct for 204)'}</div>`;
+  } catch(e) {
+    respBox.innerHTML = statusBar('ERR','✕ '+e.message,'var(--red)')
+      + `<div class="resp-body">${esc(e.message)}</div>`;
+  }
+  spin.style.display = 'none';
+}
+
+/* ── small body ── */
+async function doSmall() {
+  const spin = document.getElementById('small413Spin');
+  spin.style.display = 'inline-block';
+  const body = document.getElementById('smallBody').value;
+  const respBox = document.getElementById('small413');
+  respBox.className = 'resp-box visible';
+  respBox.innerHTML = statusBar('','<span class="spin"></span> sending…','var(--dim)');
+
+  try {
+    const r = await fetch(base()+'/small', {
+      method: 'POST',
+      headers: fetchHeaders(),
+      body: body,
+      signal: AbortSignal.timeout(8000),
+    });
+    const txt = await r.text().catch(()=>'');
+    respBox.innerHTML = statusBar(r.status, `HTTP ${r.status} ${r.statusText}`, statusColor(r.status))
+      + `<div class="resp-body">${headersText(r)}${txt ? '\n\n'+esc(txt.slice(0,400)) : ''}</div>`;
+  } catch(e) {
+    respBox.innerHTML = statusBar('ERR','✕ '+e.message,'var(--red)')
+      + `<div class="resp-body">${esc(e.message)}</div>`;
+  }
+  spin.style.display = 'none';
+}
+
+/* ── helpers ── */
+function statusColor(code) {
+  const n = parseInt(code);
+  if (n < 300) return 'var(--green)';
+  if (n < 400) return 'var(--blue)';
+  if (n < 500) return 'var(--amber)';
+  return 'var(--red)';
+}
+function statusBg(code) {
+  const n = parseInt(code);
+  if (n < 300) return 'var(--green-bg)';
+  if (n < 400) return 'var(--blue-bg)';
+  if (n < 500) return 'var(--amber-bg)';
+  return 'var(--red-bg)';
+}
+function statusBar(code, label, color) {
+  const bg = code ? statusBg(code) : 'var(--bg3)';
+  return `<div class="resp-status" style="background:${bg};color:${color}">${label}</div>`;
+}
+function headersText(r) {
+  let lines = [];
+  r.headers.forEach((v,k) => lines.push(`${k}: ${v}`));
+  return lines.join('\n');
+}
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function setActive(el) {
+  document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+}
+
+/* ── nav highlight on scroll ── */
+const sections = document.querySelectorAll('.section');
+const navItems = document.querySelectorAll('.nav-item');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const id = e.target.id;
+      navItems.forEach(n => {
+        n.classList.toggle('active', n.getAttribute('href') === '#' + id);
+      });
+    }
+  });
+}, { rootMargin: '-30% 0px -60% 0px' });
+sections.forEach(s => observer.observe(s));
+
+/* ── init ── */
+document.getElementById('baseUrl').addEventListener('input', refreshCurls);
+/* server_name apply button */
+function applyServerName() {
+  const btn = document.getElementById('applyBtn');
+  btn.textContent = '✓ applied';
+  btn.style.color = '#3ecf79';
+  btn.style.borderColor = 'rgba(62,207,121,0.4)';
+  btn.style.background = '#0d1f16';
+  setTimeout(() => {
+    btn.textContent = 'apply ↵';
+    btn.style.color = '#5b9cf6';
+    btn.style.borderColor = 'rgba(91,156,246,0.4)';
+    btn.style.background = '#0a1220';
+  }, 1800);
+  refreshCurls();
+}
+refreshCurls();
+</script>
+</body>
+</html>

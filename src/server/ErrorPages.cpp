@@ -34,6 +34,7 @@ std::string Server::buildErrorResponse(int code, const std::string& msg, ServerC
 	std::ostringstream response;
 	response << "HTTP/1.1 " << code << " " << msg << "\r\n"
 		<< "Server: Webserv/1.0\r\n"
+		<< "Access-Control-Allow-Origin: *\r\n"
 		<< "Content-Length: " << body.size() << "\r\n"
 		<< "Connection: close\r\n"
 		<< "\r\n"

@@ -7,8 +7,8 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <cerrno>
-#include <cstdio>  // For std::remove
-#include <ctime>   // For time()
+#include <cstdio>  
+#include <ctime>  
 #include <unistd.h>
 
 CGI::CGI() : _http_status(200) {}
@@ -26,7 +26,6 @@ void CGI::setHeaders(const std::map<std::string, std::string>& headers) {
     _client_headers = headers;
 }
 
-// UPDATE executeAsync
 int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
     int pipe_out[2];
 
@@ -57,7 +56,6 @@ int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
     }
 
      if (pid == 0) {
-        // --- CHILD PROCESS ---
         close(pipe_out[0]);
         dup2(pipe_out[1], STDOUT_FILENO);
         close(pipe_out[1]);
@@ -90,10 +88,7 @@ int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
             exec_path = _path.substr(last_slash + 1);
         }
 
-        // =========================================================
-        // --- NEW DYNAMIC ENVIRONMENT BUILDER (INCLUDES COOKIES) ---
-        // =========================================================
-        std::vector<std::string> env_strings;
+       std::vector<std::string> env_strings;
 
         env_strings.push_back("REQUEST_METHOD=" + _method);
         env_strings.push_back("QUERY_STRING=" + _query);
@@ -108,7 +103,6 @@ int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
         env_strings.push_back("SERVER_PROTOCOL=HTTP/1.1");
         env_strings.push_back("REDIRECT_STATUS=200");
 
-        // Convert client headers to HTTP_VAR_NAME
         for (std::map<std::string, std::string>::const_iterator it = _client_headers.begin(); it != _client_headers.end(); ++it) {
             std::string key = it->first;
             std::string env_key = "HTTP_";
@@ -119,7 +113,6 @@ int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
             env_strings.push_back(env_key + "=" + it->second);
         }
 
-        // Convert vector of strings into char* array for execve
         std::vector<char*> env_ptrs;
         for (size_t i = 0; i < env_strings.size(); ++i) {
             env_ptrs.push_back(const_cast<char*>(env_strings[i].c_str()));
@@ -128,13 +121,11 @@ int CGI::executeAsync(const std::string& script, pid_t& out_pid) {
 
         const char *args[] = { script.c_str(), exec_path.c_str(), NULL };
 
-        // Use dynamically built environment array
         execve(script.c_str(), (char * const *)args, &env_ptrs[0]);
 
         std::cerr << "[CGI-CHILD] execve failed: " << strerror(errno) << std::endl;
         exit(127);
     }
-    // --- PARENT PROCESS ---
     close(pipe_out[1]);
 
     int flags = fcntl(pipe_out[0], F_GETFL, 0);
@@ -161,7 +152,6 @@ void CGI::parseOutput(const std::string& raw_output) {
         _body_out = raw_output;
     }
 
-    // Default to 200, check if script provided a custom Status
     _http_status = 200;
     if (!_headers_out.empty()) {
         std::istringstream hstream(_headers_out);

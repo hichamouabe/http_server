@@ -4,9 +4,6 @@
 #include "CGI.hpp"
 #include <sys/wait.h>
 
-// ═══════════════════════════════════════════════════════════════════
-// MIME TYPE MANAGEMENT - C++98 Compatible
-// ═══════════════════════════════════════════════════════════════════
 bool Server::loadMimeTypes(const std::string& filepath) {
     std::ifstream file(filepath.c_str());
     if (!file.is_open()) {
@@ -89,9 +86,6 @@ std::string Server::getMimeType(const std::string& path) {
     return "application/octet-stream";
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// LOCATION MATCHING (longest prefix wins)
-// ═══════════════════════════════════════════════════════════════════
 static LocationConfig* matchLocation(ServerConfig& srv, const std::string& uri) {
     LocationConfig* best = NULL;
     size_t longest = 0;
@@ -110,9 +104,6 @@ static LocationConfig* matchLocation(ServerConfig& srv, const std::string& uri) 
     return best;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// PATH RESOLUTION (convert URI to filesystem path)
-// ═══════════════════════════════════════════════════════════════════
 static std::string resolvePath(const std::string& uri, LocationConfig* loc) {
     std::string root = loc->root;
     if (!root.empty() && root[root.size()-1] == '/')
@@ -123,9 +114,6 @@ static std::string resolvePath(const std::string& uri, LocationConfig* loc) {
     return root + remain;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// AUTOINDEX GENERATION
-// ═══════════════════════════════════════════════════════════════════
 static std::string buildAutoindex(const std::string& uri, const std::string& dir_path) {
     std::ostringstream html;
     html << "<!DOCTYPE html>\n<html><head><title>Index of " << uri << "</title></head>\n"
@@ -147,9 +135,6 @@ static std::string buildAutoindex(const std::string& uri, const std::string& dir
     return html.str();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// FILE UPLOAD
-// ═══════════════════════════════════════════════════════════════════
 static bool saveUpload(Client& c, LocationConfig* loc) {
     if (loc->upload_store.empty()) return false;
 
@@ -189,9 +174,6 @@ static bool saveUpload(Client& c, LocationConfig* loc) {
     return out.good();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// HTTP STATUS MESSAGES
-// ═══════════════════════════════════════════════════════════════════
 static const char* getStatusMsg(int code) {
     if (code == 200) return "OK";
     if (code == 201) return "Created";
@@ -217,11 +199,9 @@ bool Server::selectServerByHostname(
     const std::string& host_header,
     ServerConfig*& selected_config
 ) {
-    std::cout << "[DEBUG-VH-1] Called with Host: " << host_header << ", listen_fd: " << listen_fd << std::endl;
 
     std::map<int, std::vector<int> >::const_iterator it = _fd_to_configs.find(listen_fd);
     if (it == _fd_to_configs.end()) {
-        std::cout << "[DEBUG-VH-2] listen_fd NOT found in _fd_to_configs!" << std::endl;
         selected_config = &_configs[0];
         return false;
     }
@@ -264,9 +244,6 @@ bool Server::selectServerByHostname(
     return false;  
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// BUILD RESPONSE (main handler)
-// ═══════════════════════════════════════════════════════════════════
 void Server::buildResponse(Client& c) {
     ServerConfig* srv_ptr = NULL;
     std::string host_header = c.getHeader()["Host"];
@@ -280,6 +257,7 @@ void Server::buildResponse(Client& c) {
         std::ostringstream oss;
         oss << "HTTP/1.1 421 Misdirected Request\r\n"
             << "Server: Webserv/1.0\r\n"
+	    << "Access-Control-Allow-Origin: *\r\n"
             << "Content-Type: text/html\r\n"
             << "Content-Length: " << body.size() << "\r\n"
             << "Connection: close\r\n\r\n"
@@ -295,10 +273,18 @@ void Server::buildResponse(Client& c) {
         c.setFileSize(c.sendBuf().size());
         return;
     }
-
-    // =========================================================================
-    // FIX: Extract Query String so we don't try to open "test.py?name=naar"
-    // =========================================================================
+    if (c.getMethod() == "OPTIONS") {
+        std::ostringstream oss;
+        oss << "HTTP/1.1 204 No Content\r\n"
+            << "Server: Webserv/1.0\r\n"
+            << "Access-Control-Allow-Origin: *\r\n"
+            << "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS, PUT, HEAD\r\n"
+            << "Access-Control-Allow-Headers: *\r\n"
+            << "Connection: " << (c.isKeepAlive() ? "keep-alive" : "close") << "\r\n\r\n";
+        c.sendBuf() = oss.str();
+        c.setFileSize(c.sendBuf().size());
+        return;
+    }
     std::string full_path = c.getPath();
     std::string uri_path = full_path;
     std::string query_string = "";
@@ -306,17 +292,17 @@ void Server::buildResponse(Client& c) {
     size_t q_pos = full_path.find('?');
     if (q_pos != std::string::npos) {
         uri_path = full_path.substr(0, q_pos);
-        query_string = full_path.substr(q_pos + 1); // Strip the '?'
+        query_string = full_path.substr(q_pos + 1); 
     }
 
     LocationConfig* loc = matchLocation(srv, uri_path);
 
-    // --- 1. REDIRECT ---
     if (loc && loc->return_url.first != 0) {
         std::ostringstream oss;
         int code = loc->return_url.first;
         oss << "HTTP/1.1 " << code << " " << getStatusMsg(code) << "\r\n"
             << "Location: " << loc->return_url.second << "\r\n"
+	    << "Access-Control-Allow-Origin: *\r\n"
             << "Content-Length: 0\r\n"
             << "Connection: close\r\n\r\n";
         c.sendBuf() = oss.str();
@@ -324,7 +310,6 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    // --- 2. METHOD VALIDATION ---
     if (loc && !loc->allowed_methods.empty()) {
         bool allowed = false;
         for (size_t i = 0; i < loc->allowed_methods.size(); ++i)
@@ -344,7 +329,6 @@ void Server::buildResponse(Client& c) {
 
     std::string physical = resolvePath(uri_path, loc);
 
-    // --- 3. CGI HANDLING ---
     if (!loc->cgi_pass.empty()) {
         size_t dot = physical.rfind('.');
         if (dot != std::string::npos) {
@@ -367,7 +351,7 @@ void Server::buildResponse(Client& c) {
                 CGI cgi;
                 cgi.setMethod(c.getMethod());
                 cgi.setPath(physical);
-                cgi.setQuery(query_string); // PASS EXTRACTED QUERY HERE!
+                cgi.setQuery(query_string); 
                 cgi.setBody(c.getBody());
                 cgi.setContentType(c.getHeader().count("Content-Type") ? c.getHeader()["Content-Type"] : "");
                 cgi.setHost(c.getHeader().count("Host") ? c.getHeader()["Host"] : "localhost");
@@ -399,7 +383,6 @@ void Server::buildResponse(Client& c) {
         }
     }
 
-    // --- 4. DELETE ---
     if (c.getMethod() == "DELETE") {
         struct stat st;
         if (physical.empty() || stat(physical.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
@@ -410,6 +393,7 @@ void Server::buildResponse(Client& c) {
             std::ostringstream oss;
             oss << "HTTP/1.1 204 No Content\r\n"
                 << "Server: Webserv/1.0\r\n"
+		<< "Access-Control-Allow-Origin: *\r\n"
                 << "Content-Length: 0\r\n"
                 << "Connection: close\r\n\r\n";
             c.sendBuf() = oss.str();
@@ -418,7 +402,6 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    // --- 5. POST (file upload) ---
     if (c.getMethod() == "POST") {
         if (loc && !loc->upload_store.empty()) {
             if (saveUpload(c, loc)) {
@@ -426,6 +409,7 @@ void Server::buildResponse(Client& c) {
                 std::ostringstream oss;
                 oss << "HTTP/1.1 201 Created\r\n"
                     << "Server: Webserv/1.0\r\n"
+		    << "Access-Control-Allow-Origin: *\r\n"
                     << "Content-Length: " << body.size() << "\r\n"
                     << "Content-Type: text/html\r\n"
                     << "Connection: close\r\n\r\n" << body;
@@ -437,6 +421,7 @@ void Server::buildResponse(Client& c) {
             std::ostringstream oss;
             oss << "HTTP/1.1 204 No Content\r\n"
                 << "Server: Webserv/1.0\r\n"
+		<< "Access-Control-Allow-Origin: *\r\n"
                 << "Content-Length: 0\r\n"
                 << "Connection: close\r\n\r\n";
             c.sendBuf() = oss.str();
@@ -445,7 +430,6 @@ void Server::buildResponse(Client& c) {
         return;
     }
 
-    // --- 6. GET ---
     struct stat st;
 
     if (stat(physical.c_str(), &st) != 0) {
@@ -459,6 +443,7 @@ void Server::buildResponse(Client& c) {
             std::ostringstream oss;
             oss << "HTTP/1.1 301 " << getStatusMsg(301) << "\r\n"
                 << "Location: " << uri_path << "/\r\n"
+		<< "Access-Control-Allow-Origin: *\r\n"
                 << "Content-Length: 0\r\n"
                 << "Connection: close\r\n\r\n";
             c.sendBuf() = oss.str();
@@ -485,6 +470,7 @@ void Server::buildResponse(Client& c) {
                 std::ostringstream oss;
                 oss << "HTTP/1.1 200 " << getStatusMsg(200) << "\r\n"
                     << "Server: Webserv/1.0\r\n"
+		    << "Access-Control-Allow-Origin: *\r\n"
                     << "Content-Type: text/html\r\n"
                     << "Content-Length: " << body.size() << "\r\n"
                     << "Connection: " << (c.isKeepAlive() ? "keep-alive" : "close") << "\r\n\r\n"
@@ -518,6 +504,7 @@ void Server::buildResponse(Client& c) {
         std::ostringstream oss;
         oss << "HTTP/1.1 200 " << getStatusMsg(200) << "\r\n"
             << "Server: Webserv/1.0\r\n"
+	    << "Access-Control-Allow-Origin: *\r\n"
             << "Content-Length: " << st.st_size << "\r\n"
             << "Content-Type: " << getMimeType(physical) << "\r\n"
             << "Connection: " << (c.isKeepAlive() ? "keep-alive" : "close") << "\r\n\r\n";
@@ -525,9 +512,6 @@ void Server::buildResponse(Client& c) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// SEND RESPONSE (streaming)
-// ═══════════════════════════════════════════════════════════════════
 void Server::handleResponse(int fd) {
     Client& c = *clients[fd];
     char chunk[8192];
@@ -553,7 +537,6 @@ void Server::handleResponse(int fd) {
             std::streamsize actual = c.readFile(chunk, sizeof(chunk));
             if (actual <= 0) { c.setState(CLOSED); return; }
 
-            // FIX: Removed the errno check trap here!
             ssize_t n = send(fd, chunk, static_cast<size_t>(actual), 0);
             if (n < 0) {
                 c.setState(CLOSED);
@@ -580,9 +563,6 @@ void Server::handleResponse(int fd) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// ASYNC CGI READING
-// ═══════════════════════════════════════════════════════════════════
 void Server::handleCGIRead(int pipe_fd) {
     Client* c = cgi_clients[pipe_fd];
     char buf[4096];
@@ -614,6 +594,7 @@ void Server::handleCGIRead(int pipe_fd) {
         std::ostringstream oss;
         oss << "HTTP/1.1 " << status << " " << getStatusMsg(status) << "\r\n"
             << "Server: Webserv/1.0\r\n"
+	    << "Access-Control-Allow-Origin: *\r\n"
             << "Content-Length: " << body.size() << "\r\n";
 
         if (!headers.empty()) oss << headers << "\r\n";

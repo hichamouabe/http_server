@@ -84,13 +84,11 @@ static void parseHeaders(Client& c) {
 
 	while (std::getline(ss, line)) {
 		if (line == "\r"  || line.empty()) continue;
-		///////////////////////////////////////////check max header size /////////////
 		if (line.size() > MAX_HEADER_LINE) {
 			c.setErrorCode(431);
 			c.setState(PROCESS_REQUEST);
 			return;
 		}
-		//////////////////////////////////////////////////end ////////////////////
 		size_t colon = line.find(':');
 		if (colon == std::string::npos) continue;
 
@@ -189,14 +187,11 @@ void	Server::handleRequest(int fd) {
 			if (loc && loc->client_max_body_size > 0)
 				max_body = loc->client_max_body_size;
 
-			// --- NEW CHUNKED DETECTION ---
 			if (hdrs.count("Transfer-Encoding") && hdrs["Transfer-Encoding"] == "chunked") {
 				c.setIsChunked(true);
-				// We still need to enforce max_body_size during chunk reading
 				c.setContentLength(max_body); 
 				c.setState(READ_BODY);
 			}
-			// --- ORIGINAL CONTENT-LENGTH LOGIC ---
 			else if (hdrs.count("Content-Length")) {
 				size_t cl = static_cast<size_t>(std::atoi(hdrs["Content-Length"].c_str()));
 				c.setContentLength(cl);
@@ -220,19 +215,17 @@ void	Server::handleRequest(int fd) {
 			}
 		}
 		else if (c.getState() == READ_BODY) {
-			// --- NEW CHUNKED PARSING ---
 			if (c.getIsChunked()) {
 				while (true) {
 					size_t crlf = c.recvBuf().find("\r\n");
-					if (crlf == std::string::npos) break; // Wait for more data
+					if (crlf == std::string::npos) break; 
 
 					std::string hex_str = c.recvBuf().substr(0, crlf);
 					char* endptr;
 					long chunk_size = std::strtol(hex_str.c_str(), &endptr, 16);
 
-					if (c.recvBuf().size() < crlf + 2 + chunk_size + 2) break; // Wait for full chunk
+					if (c.recvBuf().size() < crlf + 2 + chunk_size + 2) break; 
 
-					// Security check: ensure chunked upload doesn't exceed max_body
 					if (c.getContentLength() > 0 && c.getBody().size() + chunk_size > c.getContentLength()) {
 						c.setErrorCode(413);
 						c.setState(PROCESS_REQUEST);
@@ -255,7 +248,6 @@ void	Server::handleRequest(int fd) {
 					break;
 				}
 			}
-			// --- ORIGINAL CONTENT-LENGTH PARSING ---
 			else {
 				if (c.recvBuf().size() >= c.getContentLength()) {
 					c.setBody(c.recvBuf().substr(0, c.getContentLength()));

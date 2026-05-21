@@ -34,7 +34,6 @@ Client::Client(int fd)
 
 Client::~Client() {}
 
-// reset all per-request fields for keep-alive reuse
 
 void	Client::reset() {
 	recv_buf.clear();
@@ -57,7 +56,6 @@ void	Client::reset() {
 		file_stream.close();
 }
 
-// state and buffer
 
 int	Client::getFd()	const {return fd;}
 int	Client::getListenFd() const {return listen_fd;}
@@ -70,7 +68,6 @@ bool	Client::requestComplete() const {
 	return (recv_buf.find("\r\n\r\n") != std::string::npos);
 }
 
-// request setters
 
 void	Client::setMethod(std::string m)		{method = m;}
 void	Client::setPath(std::string p)			{path = p;}
@@ -82,7 +79,6 @@ void	Client::setErrorCode(int code)			{error_code = code;}
 void	Client::setKeepAlive(bool ka)			{keep_alive = ka;}
 
 
-// request getters
 
 std::string                         Client::getMethod()        const { return method; }
 std::string                         Client::getPath()          const { return path; }
@@ -94,7 +90,6 @@ int                                 Client::getErrorCode()     const { return er
 bool                                Client::isKeepAlive()      const { return keep_alive; }
 
 
-// response file streaming
 
 void	Client::openFile(const std::string& path) {
 	file_stream.open(path.c_str(), std::ios::binary);
@@ -113,7 +108,6 @@ void    Client::setBytesSent(size_t n) { bytes_sent += n; }
 size_t  Client::getBytesSent()   const { return bytes_sent; }
 size_t  Client::getFileSize()    const { return file_size; }
 
-//////////////////////////////////////// time out functions
 void Client::updateActivityTime() {
 	last_activity_time = std::time(NULL);
 }
@@ -140,4 +134,3 @@ int Client::getTimeoutForState() const {
 }
 void Client::setIsChunked(bool c) { is_chunked = c; }
 bool Client::getIsChunked() const { return is_chunked; }
-/////////////////////////////////////////////////////////end
